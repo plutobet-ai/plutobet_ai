@@ -64,8 +64,8 @@ export default async function RiskPage() {
 
         <p className="muted small legal">
           Acting on a signal — restricting an account pending investigation — needs the
-          <code> users.restrict</code> permission and arrives with the compliance tooling in
-          phase 20. Risk raises; compliance acts. Keeping those apart is the point of having two
+          <code> users.restrict</code> permission and the account-action tooling, which is not
+          built yet. Risk raises; compliance acts. Keeping those apart is the point of having two
           roles.
         </p>
       </section>

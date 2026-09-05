@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Loader2, Ticket, TrendingDown, TrendingUp, X } from "lucide-react";
 import { naira } from "@/lib/money";
@@ -41,6 +41,30 @@ export function BetslipPanel({
   const slip = useBetslip();
   const [tab, setTab] = useState<"slip" | "mine">("slip");
   const [confirming, setConfirming] = useState(false);
+
+  /*
+   * UNIQUE IDS, BECAUSE THIS PANEL IS ON THE PAGE TWICE.
+   *
+   * `board-page.tsx` renders it as the sticky column and `mobile-bar.tsx`
+   * renders it again inside the bottom sheet. Both are in the DOM at once — the
+   * column is hidden by CSS below 1180px, not unmounted — so the hard-coded
+   * `id="sb-stake"` and `id="sb-stake-err"` appeared twice on every board page.
+   *
+   * That is invalid HTML, and it breaks the two associations that matter:
+   * `<label htmlFor>` and `aria-describedby` both resolve to the FIRST match in
+   * document order, which on a phone is the HIDDEN desktop copy. So the field a
+   * customer actually types into had its label and its error message pointing at
+   * a different element — exactly the failure the accessible-name work in the
+   * previous pass existed to prevent.
+   *
+   * axe did not catch it: `duplicate-id` is retired for non-ARIA ids, and the
+   * error paragraph only exists while an error is showing, which it was not
+   * during the scan. Playwright caught it as "strict mode violation: resolved
+   * to 2 elements".
+   */
+  const panelId = useId();
+  const stakeId = `${panelId}-stake`;
+  const stakeErrorId = `${panelId}-stake-error`;
 
   const stakeMinor = toKobo(slip.stake);
   const { totalOdds, returnMinor, profitMinor } = useMemo(
@@ -210,15 +234,15 @@ export function BetslipPanel({
                   </p>
                 ) : null}
 
-                <label className="sb-sr" htmlFor="sb-stake">Stake in naira</label>
+                <label className="sb-sr" htmlFor={stakeId}>Stake in naira</label>
                 <input
-                  id="sb-stake"
+                  id={stakeId}
                   className="sb-stake"
                   inputMode="decimal"
                   placeholder="Stake (₦)"
                   value={slip.stake}
                   aria-invalid={stakeInvalid || insufficient}
-                  aria-describedby={stakeInvalid || insufficient ? "sb-stake-err" : undefined}
+                  aria-describedby={stakeInvalid || insufficient ? stakeErrorId : undefined}
                   onChange={(e) => slip.setStake(e.target.value)}
                 />
 
@@ -231,13 +255,13 @@ export function BetslipPanel({
                 </div>
 
                 {stakeInvalid ? (
-                  <p id="sb-stake-err" className="sb-note sb-note--error" role="alert">
+                  <p id={stakeErrorId} className="sb-note sb-note--error" role="alert">
                     <AlertTriangle size={14} aria-hidden="true" />
                     Enter an amount in naira, up to two decimal places.
                   </p>
                 ) : null}
                 {insufficient ? (
-                  <p id="sb-stake-err" className="sb-note sb-note--error" role="alert">
+                  <p id={stakeErrorId} className="sb-note sb-note--error" role="alert">
                     <AlertTriangle size={14} aria-hidden="true" />
                     That is more than your balance. <Link href="/deposit">Add funds</Link> or lower the stake.
                   </p>

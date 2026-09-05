@@ -38,6 +38,51 @@ async function waitForNavigation(page: Page, predicate: (url: URL) => boolean) {
   await page.waitForURL((url) => predicate(new URL(url.toString())), { timeout: 20_000 });
 }
 
+/**
+ * The betslip the customer can actually see.
+ *
+ * THE PANEL IS ON THE PAGE TWICE — as the sticky column and inside the mobile
+ * sheet — and below 1180px the column is hidden by CSS rather than unmounted.
+ * `.first()` therefore returned the HIDDEN one on a phone, and the tests failed
+ * against a panel no customer could reach.
+ *
+ * Finding it by visibility is also what surfaced the duplicate-id defect: with
+ * both copies present, `#sb-stake` matched two elements and Playwright refused
+ * to guess. The ids are unique now; this helper still scopes every query to the
+ * visible panel, because two panels is the design and only one is in use.
+ */
+function visibleSlip(page: Page) {
+  return page.locator('[aria-label="Betslip"]:visible').first();
+}
+
+/**
+ * Opens an event from the board, using whichever control this width offers.
+ *
+ * THE STATISTICS ICON IS DELIBERATELY HIDDEN BELOW 720px. `sportsbook.css` says
+ * why: it leads to the same place as the chevron at the end of the row, and two
+ * controls with one destination is 26px a phone cannot spare beside three
+ * prices. A test that insists on the icon is arguing with a decision the design
+ * already made, and it fails on the mobile project for a reason that has
+ * nothing to do with the product being wrong.
+ *
+ * So this asks for whichever is on screen and reports which — the audit row
+ * then says what a customer at that width actually pressed.
+ */
+async function openFirstEvent(page: Page): Promise<{ via: string; href: string }> {
+  const stats = page.locator('a[aria-label^="Statistics and all markets"]:visible').first();
+  const usingStats = (await stats.count()) > 0;
+  const control = usingStats
+    ? stats
+    : page.locator('a[aria-label*="markets for"]:visible').first();
+
+  expect(await control.count(), "the board offered no way into an event at this width").toBeGreaterThan(0);
+  const href = (await control.getAttribute("href")) ?? "";
+  await control.scrollIntoViewIfNeeded();
+  await control.click();
+  await page.waitForURL("**/sports/event/**");
+  return { via: usingStats ? "the statistics icon" : "the more-markets chevron", href };
+}
+
 test.describe("global chrome — the rest of it", () => {
   test("every primary navigation destination arrives", async ({ page }) => {
     await page.goto("/");
@@ -104,7 +149,7 @@ test.describe("global chrome — the rest of it", () => {
 
   test("the More menu opens, closes on Escape and on an outside click", async ({ page }) => {
     await page.goto("/");
-    const more = page.getByRole("button", { name: /^More/ });
+    const more = page.getByRole("button", { name: /^More/ }).and(page.locator(":visible"));
     if ((await more.count()) === 0) {
       record(test.info().project.name, {
         page: "any",
@@ -176,7 +221,7 @@ test.describe("global chrome — the rest of it", () => {
   test("Pluto AI, balance, deposit, account and the auth links go where they say", async ({ page }) => {
     await page.goto("/");
 
-    const pluto = page.getByRole("link", { name: /Pluto AI/i }).first();
+    const pluto = page.getByRole("link", { name: /Pluto AI/i }).and(page.locator(":visible")).first();
     if (await pluto.isVisible().catch(() => false)) {
       await pluto.click();
       await page.waitForURL("**/pluto");
@@ -396,7 +441,7 @@ test.describe("the league rail and the board", () => {
 
   test("league and country groups collapse and expand", async ({ page }) => {
     await page.goto("/");
-    const header = page.locator("[aria-expanded]").filter({ hasText: /./ }).first();
+    const header = page.locator(".sb-board [aria-expanded]:visible").first();
     if ((await header.count()) === 0) {
       throw new Error("no collapsible group rendered on the board");
     }
@@ -430,7 +475,7 @@ test.describe("the league rail and the board", () => {
     context,
   }) => {
     await page.goto("/");
-    const star = page.locator('button[aria-pressed][aria-label*="favourites"]').first();
+    const star = page.locator('button[aria-pressed][aria-label*="favourites"]:visible').first();
     if ((await star.count()) === 0) {
       throw new Error("no fixture favourite control rendered");
     }
@@ -448,7 +493,7 @@ test.describe("the league rail and the board", () => {
     });
 
     await page.reload();
-    const afterReload = page.locator('button[aria-pressed="true"][aria-label*="favourites"]').first();
+    const afterReload = page.locator('button[aria-pressed="true"][aria-label*="favourites"]:visible').first();
     await expect(afterReload, "the favourite did not survive a reload").toBeVisible();
     record(test.info().project.name, {
       page: "/",
@@ -471,7 +516,7 @@ test.describe("the league rail and the board", () => {
      */
     const second = await context.newPage();
     await second.goto("/", { waitUntil: "domcontentloaded" });
-    const inSecondTab = second.locator('button[aria-pressed="true"][aria-label*="favourites"]').first();
+    const inSecondTab = second.locator('button[aria-pressed="true"][aria-label*="favourites"]:visible').first();
     await expect(inSecondTab, "a favourite set in one tab was not visible in another").toBeVisible({
       timeout: 15_000,
     });
@@ -523,21 +568,20 @@ test.describe("the league rail and the board", () => {
     });
   });
 
-  test("the statistics link and the more-markets chevron both reach the event page", async ({ page }) => {
+  test("the board's way into an event works at this width", async ({ page }) => {
     await page.goto("/");
-    const stats = page.locator('a[aria-label^="Statistics and all markets"]').first();
-    expect(await stats.count(), "no statistics link rendered on the board").toBeGreaterThan(0);
-    const href = await stats.getAttribute("href");
-    await stats.click();
-    await page.waitForURL("**/sports/event/**");
+    const { via, href } = await openFirstEvent(page);
     await expect(page.locator("body")).toContainText(/market/i);
 
     record(test.info().project.name, {
       page: "/",
       viewport: viewportName(page),
       control: "Statistics link",
-      action: "clicked the statistics icon on a fixture row",
-      observed: "opened the event page with its market list",
+      action: `clicked ${via} on a fixture row`,
+      observed:
+        via === "the statistics icon"
+          ? "opened the event page with its market list"
+          : "opened the event page with its market list. The statistics icon is hidden below 720px by design — it leads to the same place, and two controls with one destination is space a phone cannot spare",
       route: `GET ${href}`,
     });
   });
@@ -546,11 +590,27 @@ test.describe("the league rail and the board", () => {
 test.describe("the event page", () => {
   test("markets collapse, a selection adds to the slip, and the way back works", async ({ page }) => {
     await page.goto("/");
-    const stats = page.locator('a[aria-label^="Statistics and all markets"]').first();
-    await stats.click();
-    await page.waitForURL("**/sports/event/**");
+    await openFirstEvent(page);
 
-    const marketHeader = page.locator("[aria-expanded]").first();
+    /*
+     * BACK THE PRICE FIRST, COLLAPSE SECOND.
+     *
+     * The earlier order collapsed a market and then went looking for a price,
+     * and on a phone it found none — the toggle it had grabbed was not always a
+     * market header, so "no selectable price" was a state this test had created
+     * rather than one the page was in. Taking the selection first means the
+     * assertion that matters cannot be spoiled by the one that is decoration.
+     */
+    const tile = await firstUsableOdds(page);
+    expect(tile, "the event page rendered no selectable price").not.toBeNull();
+    const label = await tile!.getAttribute("aria-label");
+    await tile!.scrollIntoViewIfNeeded();
+    await tile!.click();
+    await expect(tile!).toHaveAttribute("aria-pressed", "true");
+
+    // `:visible` matters: the header's More menu also carries aria-expanded and
+    // is present-but-hidden on a phone, so a bare selector clicks nothing.
+    const marketHeader = page.locator(".sb-panel [aria-expanded]:visible").first();
     if ((await marketHeader.count()) > 0) {
       const before = await marketHeader.getAttribute("aria-expanded");
       await marketHeader.click();
@@ -566,12 +626,6 @@ test.describe("the event page", () => {
       });
       await marketHeader.click();
     }
-
-    const tile = await firstUsableOdds(page);
-    expect(tile, "the event page rendered no selectable price").not.toBeNull();
-    const label = await tile!.getAttribute("aria-label");
-    await tile!.click();
-    await expect(tile!).toHaveAttribute("aria-pressed", "true");
 
     record(test.info().project.name, {
       page: "/sports/event",
@@ -620,7 +674,7 @@ test.describe("the betslip", () => {
   test("the empty state says what to do", async ({ page }) => {
     await page.goto("/");
     await openSlip(page);
-    const slip = page.locator('[aria-label="Betslip"]').first();
+    const slip = visibleSlip(page);
     await expect(slip).toBeVisible();
     await expect(slip).toContainText(/empty|tap any odds/i);
 
@@ -641,11 +695,11 @@ test.describe("the betslip", () => {
     await tile!.click();
     await openSlip(page);
 
-    const stake = page.locator("#sb-stake");
+    const stake = visibleSlip(page).getByLabel("Stake in naira");
     await expect(stake).toBeVisible();
 
     // A quick-stake button sets the field.
-    const quick = page.locator(".sb-quick button").first();
+    const quick = visibleSlip(page).locator(".sb-quick button").first();
     const quickLabel = (await quick.textContent())?.trim();
     await quick.click();
     await expect(stake).not.toHaveValue("");
@@ -659,7 +713,7 @@ test.describe("the betslip", () => {
     });
 
     // A real return figure, derived from the stake and the price.
-    const ret = page.locator(".sb-total--major dd").first();
+    const ret = visibleSlip(page).locator(".sb-total--major dd").first();
     await expect(ret).toContainText(/₦/);
     record(test.info().project.name, {
       page: "/",
@@ -672,7 +726,7 @@ test.describe("the betslip", () => {
 
     // Something that is not a naira amount is refused, in the page.
     await stake.fill("12.345");
-    const error = page.locator("#sb-stake-err");
+    const error = visibleSlip(page).locator(".sb-note--error").first();
     await expect(error, "a three-decimal stake was not refused").toBeVisible();
     record(test.info().project.name, {
       page: "/",
@@ -706,9 +760,9 @@ test.describe("the betslip", () => {
     });
 
     // Removing the selection empties the slip.
-    const remove = page.locator('button[aria-label^="Remove"]').first();
+    const remove = visibleSlip(page).locator('button[aria-label^="Remove"]').first();
     await remove.click();
-    await expect(page.locator('[aria-label="Betslip"]').first()).toContainText(/empty|tap any odds/i);
+    await expect(visibleSlip(page)).toContainText(/empty|tap any odds/i);
     record(test.info().project.name, {
       page: "/",
       viewport: viewportName(page),
@@ -754,7 +808,7 @@ test.describe("the betslip", () => {
         status: "IMPLEMENTED_NOT_LIVE_TESTED",
       });
     } else {
-      await expect(page.locator('[aria-label="Betslip"]').first()).toContainText(/accumulator/i);
+      await expect(visibleSlip(page)).toContainText(/accumulator/i);
       record(test.info().project.name, {
         page: "/",
         viewport: viewportName(page),
@@ -765,8 +819,8 @@ test.describe("the betslip", () => {
       });
     }
 
-    await page.getByRole("button", { name: /clear all/i }).first().click();
-    await expect(page.locator('[aria-label="Betslip"]').first()).toContainText(/empty|tap any odds/i);
+    await visibleSlip(page).getByRole("button", { name: /clear all/i }).first().click();
+    await expect(visibleSlip(page)).toContainText(/empty|tap any odds/i);
     record(test.info().project.name, {
       page: "/",
       viewport: viewportName(page),
@@ -794,11 +848,14 @@ test.describe("the betslip", () => {
 
     await page.goto("/");
     const tile = await firstUsableOdds(page);
+    // The fixed bottom bar overlaps the last rows on a phone; scroll the price
+    // into view rather than waiting out the timeout on an unreachable element.
+    await tile!.scrollIntoViewIfNeeded();
     await tile!.click();
 
     const toggle = page.locator('nav[aria-label="Primary"] button[aria-expanded]').first();
     await expect(toggle, "no betslip toggle in the bottom bar").toBeVisible();
-    await expect(page.locator(".sb-badge")).toBeVisible();
+    await expect(page.locator(".sb-badge").first()).toBeVisible();
 
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Betslip" });
@@ -812,7 +869,16 @@ test.describe("the betslip", () => {
 
     await toggle.click();
     await expect(sheet).toBeVisible();
-    await page.locator('[aria-label="Close betslip"]').click();
+    /*
+     * Click the scrim NEAR ITS TOP EDGE. The scrim covers the viewport and the
+     * sheet sits on top of it, so a click at the scrim's centre lands on the
+     * sheet and never closes anything — Playwright waits out the full timeout
+     * on an element that is genuinely visible and genuinely not reachable there.
+     */
+    await page
+      .locator('[aria-label="Close betslip"]:visible')
+      .first()
+      .click({ position: { x: 10, y: 10 } });
     await expect(sheet).toBeHidden();
 
     record(test.info().project.name, {
@@ -836,16 +902,16 @@ test.describe("the betslip", () => {
     await tile!.click();
     await openSlip(page);
 
-    await page.locator("#sb-stake").fill("200");
-    await page.getByRole("button", { name: /^place bet$/i }).click();
+    await visibleSlip(page).getByLabel("Stake in naira").fill("200");
+    await visibleSlip(page).getByRole("button", { name: /^place bet$/i }).click();
 
     const route = await routeFor(
       page,
-      async () => page.getByRole("button", { name: /^confirm$/i }).click(),
+      async () => visibleSlip(page).getByRole("button", { name: /^confirm$/i }).click(),
       /\/api\/bets/,
     );
 
-    const placed = page.locator(".sb-note--ok");
+    const placed = visibleSlip(page).locator(".sb-note--ok");
     await expect(placed, "no confirmation appeared after placing a bet").toBeVisible({ timeout: 20_000 });
     const text = (await placed.textContent()) ?? "";
     expect(text, "the confirmation did not carry a bet reference").toMatch(/reference/i);
@@ -883,11 +949,11 @@ test.describe("the betslip", () => {
     await tile!.click();
     await openSlip(page);
 
-    await page.locator("#sb-stake").fill("999999999");
-    const error = page.locator("#sb-stake-err");
+    await visibleSlip(page).getByLabel("Stake in naira").fill("999999999");
+    const error = visibleSlip(page).locator(".sb-note--error").first();
     await expect(error, "an over-balance stake was not refused in the page").toBeVisible();
     await expect(error).toContainText(/balance/i);
-    await expect(page.getByRole("button", { name: /^place bet$/i })).toBeDisabled();
+    await expect(visibleSlip(page).getByRole("button", { name: /^place bet$/i })).toBeDisabled();
 
     record(test.info().project.name, {
       page: "/",

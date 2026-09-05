@@ -165,9 +165,9 @@ export default async function AdminUsersPage({
         </div>
 
         <p className="muted small legal">
-          Read-only. Suspending, restricting and closing accounts arrive with the compliance
-          tooling in phase 20 — each needs its own permission, a written reason and an audit row,
-          which is more than a button on a list view.
+          Read-only. Suspending, restricting and closing accounts are not built here — each needs
+          its own permission, a written reason and an audit row, which is more than a button on a
+          list view.
         </p>
       </section>
     </>

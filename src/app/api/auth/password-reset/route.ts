@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { publicRoute, type RouteContext } from "@/lib/api/handler";
 import { RATE_RULES } from "@/lib/api/rate-limit";
-import { OtpError } from "@/modules/notifications/otp.service";
+import {
+  OtpError,
+  OtpProviderUnavailableError,
+  otpDeliveryAvailable,
+} from "@/modules/notifications/otp.service";
 import {
   PasswordResetError,
   passwordResetService,
@@ -32,12 +36,51 @@ export const POST = publicRoute(
   async ({ request, ip }: RouteContext) => {
     const body = requestSchema.parse(await request.json());
 
+    /*
+     * DELIVERY FIRST, ADDRESS SECOND. The order is the security property.
+     *
+     * `otpDeliveryAvailable` depends only on configuration, so this answers the
+     * same way for every address. Asking it before the lookup is what keeps the
+     * two paths indistinguishable.
+     *
+     * This endpoint used to answer **500 for an address with an account and 200
+     * for one without**, whenever it ran in production with no email provider —
+     * which is the state it is deployed in. An unknown address short-circuits
+     * before any provider is touched and returned the cheerful 200 below; a
+     * real one reached the OTP service, hit its refusal to use the console
+     * fallback in production, and threw past the `OtpError` catch as a 500.
+     * The difference is a free membership oracle for a gambling site, and it is
+     * a privacy problem before it is a security one.
+     *
+     * 503 rather than a false 200: with no provider, "a reset code is on its
+     * way" is untrue for everybody, and saying it anyway would trade an oracle
+     * for a lie.
+     */
+    if (!otpDeliveryAvailable("EMAIL")) {
+      return NextResponse.json(
+        {
+          error: "DELIVERY_UNAVAILABLE",
+          message:
+            "Password reset is unavailable right now. No email provider is configured for this deployment.",
+        },
+        { status: 503 },
+      );
+    }
+
     let devCode: string | undefined;
     try {
       ({ devCode } = await passwordResetService.request({ email: body.email, ip }));
     } catch (error) {
       // Even a rate-limit refusal is not echoed differently, for the same
       // reason: "you are being throttled" confirms the address is real.
+      if (error instanceof OtpProviderUnavailableError) {
+        // Configuration changed under us between the check and the send. Still
+        // must not vary by address.
+        return NextResponse.json(
+          { error: "DELIVERY_UNAVAILABLE", message: "Password reset is unavailable right now." },
+          { status: 503 },
+        );
+      }
       if (!(error instanceof OtpError)) throw error;
     }
 

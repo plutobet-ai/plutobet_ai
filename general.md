@@ -867,11 +867,14 @@ section. What is done and what is next:
 |---|---|
 | Documentation consistency checker (`scripts/check-docs.mjs`) + CI wiring | **DONE** — 7 rules, **proved to fail** on an injected wrong migration total and clean when restored |
 | Reconcile the contradictions it found | **DONE** for the 20 it detected: migration totals, readiness counts, the finished-work-in-active-backlog table, a deleted file described as live, a second document claiming to be the source of truth, a retired status label |
-| Complete the real-browser control audit | **NEXT** — build an expected-control manifest per route and fail when an enabled control has no browser coverage |
-| Browser-level customer journey | not started |
-| Admin browser verification | not started |
-| Internal security verification | not started |
-| Final gates, twice | not started |
+| Expected-control manifest + coverage gate | **DONE** — `e2e/control-manifest.mjs` and `scripts/check-control-coverage.mjs`, which fails when a declared browser control has no audit row *and* when a non-browser row carries no reason |
+| Board, betslip and global-chrome coverage | **DONE** — `e2e/board-and-betslip.spec.ts` |
+| Account, safer gambling, wallet and KYC coverage | **DONE** — `e2e/account-and-wallet.spec.ts` |
+| Admin browser verification | **DONE** — `e2e/admin.spec.ts`, including a support agent refused at the URL **and** at the route |
+| Browser-level customer journey | **DONE** — `e2e/journey.spec.ts`: sign in, bet ₦200, balance moves exactly ₦200, admin sees it, cash out taken, sign out |
+| `INTERNAL_SECURITY_VERIFICATION` | **DONE** — `e2e/security.spec.ts`, 12 probes; found finding 41 |
+| Dependency audit | **DONE** — 0 in shipped dependencies; 4 moderate dev-only, recorded with exploitability |
+| Final gates, twice | **IN PROGRESS** |
 
 **Also urgent and unchanged: check the Vercel production deployment** that the
 earlier `main` push triggered. See "A production deployment happened" below.
@@ -1093,17 +1096,35 @@ trap. Getting there took five defects; they are findings 33, 34, 35 and 38.
 | 39 | **On a short page the footer stopped mid-screen.** `.sb` is `min-height: 100dvh`, but nothing made the middle grow, so on any page with an empty state — results, livescore, promotions with nothing running — the dark footer sat wherever the content ended and left a band of pale canvas beneath it, which reads as a page that failed to finish loading. Found by looking at a screenshot; no automated check measures it, because the page does not overflow and nothing errors | **FIXED** — the shell lays out as a column with a growing middle, scoped to `.sb-app` so the session-free 404 page is untouched. Re-verified in the browser and by the full suite |
 | 38 | **Two labels on `/account/preferences` were near-invisible.** They set `color: var(--ink)` — the LEGACY dark theme's near-white `#e9edf5` — on a white card, about 1.1:1. Stage 5h deleted the bridge that used to re-point `--ink` at a readable colour, and these two inline styles were missed, so the page shipped with unreadable text. **Stage 5h's claim that all seven dependent files were converted was wrong**: it audited classes and did not catch legacy variables in inline `style` props | **FIXED** — both use `var(--sb-ink)`, and a repository-wide search now confirms **zero** legacy `var(--…)` references in any `.tsx` file |
 
-**Cash-out is now priced in a real browser**, and that is an upgrade with a
-limit. The audit row `/bets → Cash out` is `VERIFIED_IN_REAL_BROWSER` in both
-projects: the control was clicked and the server quoted through
-`GET /api/bets/<id>/cashout`. **Taking** the offer — the request that moves
-money — is not browser-verified; it is covered end to end by stage 7's journey
-test through the same route. So the quote is `VERIFIED_IN_REAL_BROWSER` and the
-take is `VERIFIED_BY_INTEGRATION_TEST`, and the two are not the same claim.
+| 40 | **The demo seed created a customer who could not bet, and every test passed anyway.** `player@demo.local` was inserted with no `date_of_birth`, which is exactly the legacy state stage 5d closed — so the account carried the "Confirm your date of birth" banner and every placement was refused with the generic "none of the combinations on this slip could be placed". **The browser suite had therefore never once placed a bet**, and nothing said so, because a correct refusal is indistinguishable from a passing test when no test asserts the success | **FIXED** — the seed sets a date of birth for the demo player. Found the moment a test tried to place a bet and read the confirmation |
+| 41 | **The password-reset route was an account-enumeration oracle.** Its whole design goal is to answer identically whether or not an address has an account — the comment in the route says so. But the OTP service's refusal to use its console fallback in production threw a **plain `Error`**, which fell past the route's `OtpError` catch and became a **500**, while an address with *no* account short-circuited before any provider was touched and returned **200**. So in exactly the configuration this is deployed in — a production build with no Resend key — **a customer's address answered 500 and a stranger's answered 200.** For a gambling site that is a privacy problem before it is a security one | **FIXED** — a typed `OtpProviderUnavailableError`, and the route now checks `otpDeliveryAvailable()` **before** looking the address up, so the answer cannot depend on the address. Both cases return the same 503. Found by the browser security pass, not by reading the route |
+| 42 | The same misconfiguration surfaced on the registration OTP route as an **opaque 500**. A deployment that cannot send anything is not a server fault to be swallowed, and it is not a rate limit either | **FIXED** — 503 with a message that says codes cannot be sent, without naming which variable is missing to an anonymous caller |
+| 44 | **Two internal build-phase labels were rendered in the admin console.** `/admin/risk` and `/admin/users` each told the operator that missing tooling "arrives with the compliance tooling in **phase 20**". A phase number is an internal roadmap reference and means nothing to the person reading it; the redesign removed these from the customer-facing side and missed the admin pages, which were deliberately excluded from that pass | **FIXED** — both now say what is missing and why (its own permission, a written reason, an audit row) without a phase number |
+| 43 | **Duplicate DOM ids on every board page.** `BetslipPanel` is rendered twice — as the sticky column and inside the mobile sheet — and below 1180px the column is *hidden by CSS, not unmounted*. So `id="sb-stake"`, `id="sb-stake-err"` and the `<label htmlFor>` pointing at them existed twice. `htmlFor` and `aria-describedby` both resolve to the **first** match in document order, which on a phone is the hidden desktop copy — so the stake field a customer actually types into had its label and its error message bound to a different element. axe missed it: `duplicate-id` is retired for non-ARIA ids, and the error paragraph only exists while an error is showing, which it was not during the scan | **FIXED** — `useId()` gives each panel its own ids. Found by Playwright refusing to guess between two matches, on the mobile project |
 
-The date-of-birth *control* is audited (row: `/register`, date of birth) but the
-full completion flow is not a browser journey either. Blockers inherited from
-the previous pass are in §23.
+**Cash-out is now priced *and taken* in a real browser**, and that is an upgrade
+with a limit. The browser now **quotes the offer, sees the partial choice, accepts the
+offer through the authenticated route, watches the balance rise by exactly the
+quoted figure, and re-reads the ticket** — one run, recorded in the audit:
+
+```
+Cash out                      quoted "Accept ₦190.00"      GET  /api/bets/<id>/cashout
+Cash out — partial option     "Take half and leave the rest running" offered
+Cash out — accept full        Cashed out for ₦190.00       POST /api/bets/<id>/cashout
+                              CASH ₦48,200.00 → ₦48,390.00
+Cash out — ticket updated     the ticket shows it cashed out
+```
+
+**The limit**: *taking the partial* is not browser-driven. The choice is
+asserted as offered; the half that keeps running, and the exposure released
+exactly once, are arithmetic a browser cannot see and are covered by
+`cashout-exposure.acceptance.spec.ts`.
+
+A correction worth recording: the control manifest first claimed no partial
+control was rendered at all. That was wrong, and reading the component is what
+found it — not the test, which had happily agreed.
+
+Blockers inherited from the previous pass are in §23.
 
 ### Deliberately not performed
 
@@ -1246,7 +1267,7 @@ product that also promises casino, virtuals, in-play, fantasy and more.
 
 | Question | Answer |
 |---|---|
-| Can a test account complete a bet end to end? | **Yes.** `VERIFIED_END_TO_END` — one account, one run, 14 steps: register, fund, bet, win, loss, void, correction, cash-out, refusals, and the ledger still agreeing at the end (§0, stage 7) |
+| Can a test account complete a bet end to end? | **Yes, twice over.** `VERIFIED_END_TO_END` through the services — 14 steps, one account, one run, ending with the ledger agreeing. **And `VERIFIED_IN_REAL_BROWSER`** — sign in, back a price, stake ₦200, watch CASH fall by exactly ₦200.00, find it in My Bets, see the administrator holding the same bet, take a ₦190.00 cash-out and watch the balance rise by exactly that, then sign out. The two cover different halves: the first controls the clock and drives settlement; the second holds a cookie |
 | Can a stranger's real money enter or leave? | **No.** No payment credentials exist |
 | Does a winning bet get paid without a human? | **Yes** — proven once on a real fixture, §14 |
 | Is the customer interface finished? | **Redesigned and verified in a real browser** — 139 Playwright tests, **38 audited interactions**, 28 screenshots, **all seven owner-named viewports swept**, and an accessibility pass at **0 critical / 0 serious** (§5, §6, §8). **Merged to `main` on both remotes.** |
@@ -1446,65 +1467,94 @@ For most of the rows below, the destination page *is* browser-verified by the
 Playwright suite even where the control itself was never clicked; that is worth
 something, and it is not the same thing.
 
+### This table is no longer the authority, and that is deliberate
+
+**A hand-maintained inventory drifts.** This one did: it carried
+`IMPLEMENTED_NOT_LIVE_TESTED` against controls that had been browser-tested for
+two passes, and it could not have told anybody about a control that was never
+tested at all, because a missing row looks like a table that is simply shorter.
+
+Two generated artefacts replaced its job:
+
+| Artefact | Answers |
+|---|---|
+| `artifacts/ui-review/INTERACTION_AUDIT.md` | **what the browser did** — every row is written by the run that did it |
+| `e2e/control-manifest.mjs` | **what must be accounted for** — every control declared as browser-covered, blocked by a named dependency, or deferred to an integration boundary *with a reason* |
+
+`scripts/check-control-coverage.mjs` compares them and **fails the build** when a
+control declared browser-covered has no audit row, and separately when a
+non-browser row carries no reason — because otherwise the cheapest way to pass
+is to reclassify a control as blocked and move on.
+
+The table below is kept as a readable description of the interface. **Where it
+disagrees with the generated audit, the audit is right.**
+
 ### Header and global chrome
 
 | Control | Does | Status |
 |---|---|---|
 | Brand mark | Navigates to `/` | `VERIFIED_IN_REAL_BROWSER` |
-| Sports / Live / Jackpot / Promotions | Navigate to those pages | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| More ▾ | Opens a menu built from the navigation registry; entries not yet built are labelled "Not yet". Closes on outside click and on Escape | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Pluto AI | Navigates to `/pluto` | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Sports / Live / Jackpot / Promotions | Navigate to those pages | `VERIFIED_IN_REAL_BROWSER` — every destination followed, all answered under 400 |
+| More ▾ | Opens a menu built from the navigation registry; entries not yet built are labelled "Not yet". Closes on outside click and on Escape | `VERIFIED_IN_REAL_BROWSER` — opened, closed with Escape, closed with an outside click |
+| Pluto AI | Navigates to `/pluto` | `VERIFIED_IN_REAL_BROWSER` |
 | Search | Expands in place; submitting navigates to `/sports?q=…`, which filters the board by team or competition. An empty query is a no-op rather than a pointless navigation | `VERIFIED_IN_REAL_BROWSER` |
-| Balance | Navigates to `/wallet`; shows the server-resolved balance, or `—` if it could not be read | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Deposit | Navigates to `/deposit` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Account icon | Navigates to `/account` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Sign in / Register | Navigate to `/signin`, `/register` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Sports tabs (second row) | Navigate to `/sports?sport=…` | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Balance | Navigates to `/wallet`; shows the server-resolved balance, or `—` if it could not be read | `VERIFIED_IN_REAL_BROWSER` |
+| Deposit | Navigates to `/deposit` | `VERIFIED_IN_REAL_BROWSER` |
+| Account icon | Navigates to `/account` | `VERIFIED_IN_REAL_BROWSER` |
+| Sign in / Register | Navigate to `/signin`, `/register` | `VERIFIED_IN_REAL_BROWSER` |
+| Sports tabs (second row) | Navigate to `/sports?sport=…` | `VERIFIED_IN_REAL_BROWSER` |
 | Footer links | 13 links to real pages | `VERIFIED_IN_REAL_BROWSER` |
+| Mobile bottom bar | Navigates; hidden above 900px by design | `VERIFIED_IN_REAL_BROWSER` |
+| Branded 404 | Answers 404, carries the brand, and its actions lead back | `VERIFIED_IN_REAL_BROWSER` |
 
 ### League rail (desktop)
 
 | Control | Does | Status |
 |---|---|---|
-| Competition search | Filters the rail as you type | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Today / Upcoming / Live now | Navigate with the matching query | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| League link | Filters the board to that competition | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Favourite star | Persists to `localStorage` and pins that competition to a "Your competitions" group at the top. Survives reload; syncs across tabs | `VERIFIED_IN_REAL_BROWSER` |
-| Country group | Expands and collapses | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Competition search | Filters the rail as you type | `VERIFIED_IN_REAL_BROWSER` |
+| Today / Upcoming / Live now | Navigate with the matching query | `VERIFIED_IN_REAL_BROWSER` |
+| League link | Filters the board to that competition | `VERIFIED_IN_REAL_BROWSER` |
+| Favourite star | Persists to `localStorage` and pins that competition to a "Your competitions" group at the top. Survives reload; syncs across tabs | `VERIFIED_IN_REAL_BROWSER` — starred, reloaded, and seen in a second tab |
+| Country group | Expands and collapses | `VERIFIED_IN_REAL_BROWSER` |
 
 ### Match board
 
 | Control | Does | Status |
 |---|---|---|
-| League header | Collapses and expands that league | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Fixture star | Persists to `localStorage` and pins the match to a "Your matches" group at the top of the board | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| League header | Collapses and expands that league | `VERIFIED_IN_REAL_BROWSER` — `aria-expanded` toggles both ways |
+| Fixture star | Persists to `localStorage` and pins the match to a "Your matches" group at the top of the board | `VERIFIED_IN_REAL_BROWSER` — starred, survived a reload, visible in a second tab |
 | Odds tile (1 / X / 2 / O2.5 / U2.5) | Adds or removes the selection from the betslip. Disabled when suspended, closed or unavailable, and renders `—` rather than inventing a price | `VERIFIED_IN_REAL_BROWSER` |
 | Statistics icon | Opens `/sports/event/<providerEventId>` | `VERIFIED_IN_REAL_BROWSER` — the route was created in this pass |
 | "+N" more markets | Same destination | `VERIFIED_IN_REAL_BROWSER` — same |
-| Filter chips (All upcoming / Today / Live / Jackpot / Clear) | Real links with real query parameters, so a filter can be bookmarked and shared | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Filter chips (All upcoming / Today / Live / Jackpot / Clear) | Real links with real query parameters, so a filter can be bookmarked and shared | `VERIFIED_IN_REAL_BROWSER` — clicked, and the landed URL equals the chip's own href |
+| Unavailable price | Rendered struck through and not pressable, never as a plausible number | `VERIFIED_IN_REAL_BROWSER` |
 
 ### Event page
 
 | Control | Does | Status |
 |---|---|---|
-| Market header | Collapses and expands that market | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Every selection tile | Adds to the betslip at the stored price | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Back to competition | Returns to the filtered board | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Market header | Collapses and expands that market | `VERIFIED_IN_REAL_BROWSER` |
+| Every selection tile | Adds to the betslip at the stored price | `VERIFIED_IN_REAL_BROWSER` |
+| Back to competition | Returns to the filtered board | `VERIFIED_IN_REAL_BROWSER` |
 
 ### Betslip
 
 | Control | Does | Status |
 |---|---|---|
-| Betslip / My Bets tabs | Switch panes | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Remove selection | Removes it | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Stake field | Parsed to integer kobo; rejects anything that is not a plain naira amount | `IMPLEMENTED_NOT_LIVE_TESTED` — 11 tests |
-| Quick stakes (₦100/500/1,000/5,000) | Set the stake | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Place bet → Confirm | `POST /api/bets` with a fresh idempotency key; disabled while in flight; a success is only claimed for a response carrying a real bet id | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Clear all | Empties the slip | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Sign in to place bet | Shown instead of the submit when signed out | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Odds-moved warning | Compares the price now against the price when added | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Open My Bets / View in My Bets | Navigate to `/bets` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Set a limit | Navigates to `/responsible` | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Empty state | Says the slip is empty and how to add a selection | `VERIFIED_IN_REAL_BROWSER` |
+| Betslip / My Bets tabs | Switch panes | `IMPLEMENTED_NOT_LIVE_TESTED` — the panes render; the tab itself is not pressed |
+| Remove selection | Removes it | `VERIFIED_IN_REAL_BROWSER` — slip returned to its empty state |
+| Stake field | Parsed to integer kobo; rejects anything that is not a plain naira amount | `VERIFIED_IN_REAL_BROWSER` — "12.345" refused in the page, "200" accepted; 11 unit tests behind it |
+| Quick stakes (₦100/500/1,000/5,000) | Set the stake | `VERIFIED_IN_REAL_BROWSER` |
+| Accumulator | Two selections across different fixtures; total odds multiply | `VERIFIED_IN_REAL_BROWSER` |
+| Potential return | Derived from stake and price, and states that it includes the stake | `VERIFIED_IN_REAL_BROWSER` |
+| Place bet → Confirm | `POST /api/bets` with a fresh idempotency key; disabled while in flight; a success is only claimed for a response carrying a real bet id | `VERIFIED_IN_REAL_BROWSER` — ₦200 placed, a real reference returned, CASH moved by exactly ₦200.00 |
+| Insufficient funds | Refused in the page with a route to add funds; the button disables | `VERIFIED_IN_REAL_BROWSER` |
+| Clear all | Empties the slip | `VERIFIED_IN_REAL_BROWSER` |
+| Sign in to place bet | Shown instead of the submit when signed out | `VERIFIED_IN_REAL_BROWSER` |
+| Odds-moved warning | Compares the price now against the price when added | `VERIFIED_BY_INTEGRATION_TEST` — needs the price to move between two moments a browser cannot separate |
+| Open My Bets / View in My Bets | Navigate to `/bets` | `VERIFIED_IN_REAL_BROWSER` |
+| Set a limit | Navigates to `/responsible` | `VERIFIED_IN_REAL_BROWSER` |
 
 The slip persists in `sessionStorage` and is the single source of truth for
 picks and stake — there is no second copy in component state to drift from it.
@@ -1513,40 +1563,49 @@ picks and stake — there is no second copy in component state to drift from it.
 
 | Control | Does | Status |
 |---|---|---|
-| Home / Sports / Live / Account | Navigate | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Betslip | Opens the bottom sheet; badge shows the selection count; Escape and the scrim close it; the page behind does not scroll | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Home / Sports / Live / Account | Navigate | `VERIFIED_IN_REAL_BROWSER` |
+| Betslip | Opens the bottom sheet; badge shows the selection count; Escape and the scrim close it; the page behind does not scroll | `VERIFIED_IN_REAL_BROWSER` — opened, Escape closed it, reopened, closed from the scrim control, and `overflow` on the body measured as locked while open |
 
 ### Authentication
 
 | Control | Does | Status |
 |---|---|---|
-| Sign-in form | `signIn("credentials", { redirect: false })`, then routes to a validated same-site callback | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Show / hide password | Toggles the field type | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Forgot password | Navigates to `/forgot-password` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Register step 1 → Send code | `POST /api/auth/otp` | `BLOCKED_BY_KEY` — the request is real; **delivery** needs Termii |
-| Register step 2 → Create account | `POST /api/auth/register`, then signs in through the ordinary credentials flow | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Change details | Returns to step 1 and clears the code | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Reset: send code | `POST /api/auth/password-reset` — always advances, so the page cannot be used to discover which addresses have accounts | `BLOCKED_BY_KEY` — delivery needs Resend |
-| Reset: set new password | `PUT /api/auth/password-reset` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Sign in with your new password | A link to `/signin`. **Fixed in this pass**: it used to call `signIn` with no password, which can only fail | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Sign-in form | `signIn("credentials", { redirect: false })`, then routes to a validated same-site callback | `VERIFIED_IN_REAL_BROWSER` — correct and wrong passwords, and an httpOnly session cookie observed |
+| Show / hide password | Toggles the field type | `VERIFIED_IN_REAL_BROWSER` |
+| Forgot password | Navigates to `/forgot-password` | `VERIFIED_IN_REAL_BROWSER` |
+| Sign out | Ends the session | `VERIFIED_IN_REAL_BROWSER` — a protected page no longer opens afterwards |
+| Callback guard | Refuses a callback pointing off this site | `VERIFIED_IN_REAL_BROWSER` — 4 hostile forms, including protocol-relative and backslash |
+| Register step 1 → Send code | `POST /api/auth/otp` | `BLOCKED_BY_KEY` — **and the refusal is now asserted**: under a production build with no SMS provider the route answers 503 and returns no code. The console fallback would put the code in the response body |
+| Register step 2 → Create account | `POST /api/auth/register`, then signs in through the ordinary credentials flow | `VERIFIED_BY_INTEGRATION_TEST` — unreachable in a browser against the review server, because step 1 cannot complete without a provider. `customer-journey.acceptance.spec.ts` registers through the real handler |
+| Change details | Returns to step 1 and clears the code | `IMPLEMENTED_NOT_LIVE_TESTED` — behind the same step-1 blocker |
+| Reset: send code | `POST /api/auth/password-reset` — always advances, so the page cannot be used to discover which addresses have accounts | `VERIFIED_IN_REAL_BROWSER` — a known and an unknown address now answer **identically**. They did not before; see finding 41. Delivery still needs Resend |
+| Reset: set new password | `PUT /api/auth/password-reset` | `VERIFIED_BY_INTEGRATION_TEST` — needs a delivered code |
+| Sign in with your new password | A link to `/signin`. **Fixed in an earlier pass**: it used to call `signIn` with no password, which can only fail | `VERIFIED_IN_REAL_BROWSER` — it is a link, and the sign-in form it points at is exercised |
 
 ### Account, wallet and money
 
 | Control | Does | Status |
 |---|---|---|
-| Wallet: Deposit / Withdraw / My bets | Navigate | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Deposit: account number panel | Displays the dedicated NUBAN. There is deliberately no amount field — the customer transfers what they like and the webhook attributes it | `BLOCKED_BY_KEY` — needs Paystack to issue the account |
-| Withdraw form | `POST /api/withdrawals` with an idempotency key; refuses under the minimum, over the balance, over the daily cap | `BLOCKED_BY_KEY` for the payout leg |
-| Verify identity | Navigates to `/kyc` | `IMPLEMENTED_NOT_LIVE_TESTED` (upload and review; no identity provider — §16) |
-| Account: 9 manage tiles | Navigate to real pages | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Wallet: buckets and statement | Cash is the headline and is labelled "yours to withdraw"; bonus and locked appear separately when held, never folded in | `VERIFIED_IN_REAL_BROWSER` |
+| Wallet: Deposit / Withdraw / My bets | Navigate | `VERIFIED_IN_REAL_BROWSER` |
+| Deposit: account number panel | Displays the dedicated NUBAN. There is deliberately no amount field — the customer transfers what they like and the webhook attributes it | `BLOCKED_BY_KEY` — needs Paystack. **Asserted**: with no provider the page renders no ten-digit account number rather than a plausible one |
+| Withdraw: minimum and over-balance | Named in the page, and the submit disabled, before anything is sent | `VERIFIED_IN_REAL_BROWSER` |
+| Withdraw: bank field | A picker from the provider abstraction, falling back to a typed code only when the list cannot be fetched — and saying so | `VERIFIED_IN_REAL_BROWSER` for the field's behaviour; the payout leg stays `BLOCKED_BY_KEY` |
+| Withdraw: daily cap and KYC restriction | Refused by tier | `VERIFIED_BY_INTEGRATION_TEST` — needs an account at a specific tier with a specific day's history |
+| Verify identity | Navigates to `/kyc`; states the tier and what it permits | `VERIFIED_IN_REAL_BROWSER` — **and asserted not to claim** an identity was checked against any registry, because none is connected |
+| KYC upload | Writes to object storage | `VERIFIED_BY_INTEGRATION_TEST` — the review server blanks the B2 credentials on purpose (finding 31), so a browser upload has nowhere legitimate to go |
+| Account: 9 manage tiles | Navigate to real pages | `VERIFIED_IN_REAL_BROWSER` — every link followed, all answered under 400 |
 | Account: verify email | `POST /api/account/email-verify` | `BLOCKED_BY_KEY` — needs Resend |
-| Security: change password | `POST /api/account/password` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Security: sign out a device / all devices | `DELETE /api/account/sessions` — a revoked session is downgraded on its next request | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Preferences: odds format, notifications | `PUT /api/account/preferences` | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Safer gambling: set a limit | `POST /api/responsible` — lowering applies immediately, raising waits 24 hours | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Safer gambling: cool-off, self-exclude | Same route | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Referrals: copy link / share | Clipboard, and the Web Share sheet where the browser has one. **Added in this pass** — the link was previously printed as text for the customer to select by hand | `IMPLEMENTED_NOT_LIVE_TESTED` |
-| Rewards: see promotions | Navigates | `IMPLEMENTED_NOT_LIVE_TESTED` |
+| Security: change password | `POST /api/account/password` | `VERIFIED_IN_REAL_BROWSER` for the refusal of a wrong current password. The success path is deliberately not driven: rotating the shared demo password mid-run would break every later sign-in |
+| Security: sign out a device / all devices | `DELETE /api/account/sessions` — a revoked session is downgraded on its next request | `VERIFIED_IN_REAL_BROWSER` for the control; the downgrade itself is `VERIFIED_BY_INTEGRATION_TEST`, being a property of the *next* request |
+| Preferences: odds format, notifications | `PUT /api/account/preferences` | `VERIFIED_IN_REAL_BROWSER` — both changed, saved, and still set after a reload |
+| Safer gambling: deposit, stake and loss limits | `POST /api/responsible` — lowering applies immediately, raising waits 24 hours | `VERIFIED_IN_REAL_BROWSER` — all three set through the form and listed back |
+| Safer gambling: delayed increase | The 24-hour wait | `VERIFIED_BY_INTEGRATION_TEST` — a browser cannot wait a day |
+| Safer gambling: cool-off ("Take a break") | Pauses betting and deposits | `VERIFIED_IN_REAL_BROWSER` for the control being offered, enabled, labelled with its duration and stating that it cannot be shortened. **Not started**: it would lock the shared demo account out of every later test |
+| Safer gambling: self-exclude | Closes the account, registered against the verified identity | `VERIFIED_BY_INTEGRATION_TEST` — irreversible for the account that takes it |
+| Referrals: copy link / share | Clipboard, and the Web Share sheet where the browser has one | `VERIFIED_IN_REAL_BROWSER` |
+| Rewards: see promotions | Navigates | `VERIFIED_IN_REAL_BROWSER` |
+| Date of birth: completion page and underage refusal | Write-once; underage is 403 and the date is not echoed back | `VERIFIED_IN_REAL_BROWSER` |
 
 ### Controls that are deliberately inert, and say so
 
@@ -1554,8 +1613,11 @@ picks and stake — there is no second copy in component state to drift from it.
 |---|---|---|
 | Live board prices | Shown for information. In-play placement needs a real in-play feed; a tappable price the server would refuse is worse than none | `BLOCKED_BY_CONTRACT` |
 | Casino game cards | **No longer links.** They pointed at `/casino/play/<id>`, which does not exist; the only configured provider is the development sandbox, whose own launch URL returns an explainer rather than a game. The page now says the games cannot be opened | `BLOCKED_BY_CONTRACT` |
-| Cash out | In-ticket control on `/bets`: prices on demand, sends the figure it showed, refuses a stale offer — §15 | `VERIFIED_BY_INTEGRATION_TEST` |
-| Fantasy / Live Casino / Lucky Numbers | An honest unavailable page with routes to what does work | `NOT_IMPLEMENTED` |
+| Fantasy / Live Casino / Lucky Numbers | An honest unavailable page with routes to what does work | `NOT_IMPLEMENTED` — and each states **its own** reason, not a borrowed one |
+
+**Cash out is no longer in this table.** It is not inert: it prices, it is
+accepted, and the money moves — in a browser. See §15 and the audit rows quoted
+in §0.
 
 ### Dead controls found and closed in this pass
 
@@ -1892,9 +1954,35 @@ addresses.
 server-side in Redis and failing closed, and an audit trail with a
 database-enforced reason.
 
-Status: `IMPLEMENTED_NOT_LIVE_TESTED`. `npm run admin:smoke` executes every
-admin query against a real schema and passes; no human has used the console
-against production traffic.
+Status: **`VERIFIED_IN_REAL_BROWSER`** as of 2026-09-05, `e2e/admin.spec.ts`.
+
+`npm run admin:smoke` proves every admin QUERY runs — 18 of 18 — and that was
+the whole of the evidence until now. It cannot prove a person can operate the
+console: a page whose query succeeds and whose markup throws renders a blank
+screen and a green smoke test. So the browser opens them.
+
+| Checked in a browser | Result |
+|---|---|
+| All 18 admin screens | every one answered under 400 with **no console error, no uncaught exception and no failed request** |
+| Dashboard, user search, bets, ledger, reconciliation, audit log, KYC queue, withdrawal queue | each renders its own content, not an empty shell or a permission refusal |
+| A newly placed bet | visible to the administrator, matching the customer's own view — the journey places it and the admin context sees it |
+| Signed-out access by URL | redirected to sign-in; no admin chrome rendered |
+| An ordinary customer by URL | refused; never reaches `/admin` |
+| **A SUPPORT_AGENT at `/admin/roles`** | refused — while a SUPER_ADMIN is allowed, so the test proves a *separation* and not merely a broken page |
+| **A SUPPORT_AGENT posting a SUPER_ADMIN grant** | refused at the route, using its own session cookie. Hidden navigation is a courtesy; this is the control |
+
+To make that last pair meaningful the demo seed now creates a **second
+administrator holding only SUPPORT_AGENT**, and issues both sets of powers the
+way the application issues them — `bootstrapSuperAdmin` for the first super
+admin, which refuses the moment one exists, then the real `RbacService.grant`,
+which demands a super-admin actor, refuses self-granting, requires a reason and
+writes the audit row. Granting by hand would have tested a fiction.
+
+**What is still not claimed.** No withdrawal was approved, no exposure adjusted
+and no bet settled from the browser. Those move money, and a browser suite that
+moves money on a schedule is a worse idea than the coverage it buys — their
+refusal paths are asserted here, their success paths in the acceptance tests.
+And **no human has used the console against production traffic.**
 
 **The admin console was not part of the interface redesign.** It renders
 outside the `.sb` shell and keeps the dark system deliberately: it is an
@@ -2011,9 +2099,55 @@ check, which is how a privilege problem survives a review.
 | Open-redirect guard on sign-in | `VERIFIED_BY_INTEGRATION_TEST` — §9 |
 | Secret scanning in CI | `VERIFIED_BY_INTEGRATION_TEST` — 15 rules |
 | `IDENTITY_PEPPER` rotation | **NOT DONE.** Possible only while every account is a test account; permanently impossible afterwards |
+| **`INTERNAL_SECURITY_VERIFICATION`** | **Done 2026-09-05**, `e2e/security.spec.ts` — see below |
+| Dependency vulnerability audit | **Done.** `npm audit --omit=dev`: **0 vulnerabilities**. Full tree: 4 moderate, all dev-only — see below |
 | Rotation of credentials pasted into a chat during setup | **NOT DONE** — Neon, Upstash, Backblaze, Inngest, odds-api.io |
 | Managed secret storage | `NOT_IMPLEMENTED` — `.env` is gitignored, and that is all |
-| Penetration testing | `NOT_IMPLEMENTED` |
+| Independent penetration testing | `NOT_IMPLEMENTED` — external work, and the internal pass below does **not** discharge it |
+
+### `INTERNAL_SECURITY_VERIFICATION`, 2026-09-05
+
+**What it is not.** Not a penetration test. Nobody creative sat down with this
+system and tried to break it; a list of known attack shapes was fired at it
+through the real HTTP surface and the answers were recorded. That catches
+regressions in controls the team already knows about and finds nothing nobody
+thought of, which is the entire value of the human exercise. An independent test
+stays outstanding.
+
+`e2e/security.spec.ts`, 12 probes, against the disposable local stack. **All
+pass**, and one of them found a real defect on its first run.
+
+| Probe | Result |
+|---|---|
+| Authentication bypass | 7 protected routes called with no session — all 4xx |
+| Error-message identifier leakage | a forced placement refusal carries no UUID and no exposure figure |
+| Cross-user object access | a foreign bet id is refused, and the refusal does not disclose whether it exists |
+| Open redirect | 4 hostile `callbackUrl` forms, including protocol-relative and backslash — all stayed on this origin |
+| Webhook signature | unsigned and wrongly signed credit payloads both refused |
+| Idempotency conflict | one key, two different amounts — the second did not take effect |
+| Injection | SQL, script and traversal payloads in the search box: no 5xx, no script executed |
+| Secrets in the client bundle | 5 credential shapes searched across every same-origin script — none present |
+| Rate limiting | 80 requests from one forwarded address: shed by refusing, **0 server errors** |
+| Test-only routes | 8 QA, seed and debug paths probed — all 404 |
+| Age-gate bypass | an underage date posted to an account that already holds one: refused, and not echoed back |
+| AI money actions | 3 "do it without confirming" instructions — none reported an action performed |
+
+**The defect it found is finding 41**, and it is the kind only a probe finds:
+the password-reset endpoint answered **500 for an address with an account and
+200 for one without**, in exactly the configuration this is deployed in. Its own
+comment says it must answer identically. Reading the route would not have shown
+it, because the difference came from an error thrown two modules away.
+
+### Dependency audit
+
+| Scope | Result |
+|---|---|
+| `npm audit --omit=dev` (what ships) | **0 vulnerabilities** |
+| Full tree including dev | **4 moderate**, one root cause |
+
+| Package | Severity | Path | Exploitability here | Why it is not fixed |
+|---|---|---|---|---|
+| `esbuild` ≤ 0.24.2 | moderate | `drizzle-kit` → `@esbuild-kit/esm-loader` → `@esbuild-kit/core-utils` → `esbuild` | **None in this project.** The advisory is that esbuild's **development server** lets any website send it requests and read the response. This repository never runs that server; `drizzle-kit` is a dev dependency used by `db:generate` to emit SQL | The only offered fix is `drizzle-kit@0.18.1` — a **downgrade** and a breaking change, against a config written for 0.31. No fixed version exists in the 0.x line. Recorded rather than forced, per the instruction not to apply unsafe upgrades |
 | Prompt-injection corpus for the AI surfaces | `NOT_IMPLEMENTED` — guardrail tests exist; a dedicated corpus does not |
 
 ---
@@ -2160,27 +2294,55 @@ below, and in the blocked sections above: edit bet, personalisation and Admin AI
 need rules nobody has written; Fantasy needs product rules; Lucky Numbers needs
 rules, a certified RNG and regulatory approval.
 
+### Owner decisions required
+
+**These are questions, not tasks.** Each names what a developer cannot decide,
+because deciding it would mean writing the financial or responsible-gambling
+policy of a money feature. A recommendation is offered where one is safe; **none
+of it is implemented, and none should be until it is approved.**
+
+| Feature | Blocked by | The exact questions | A safe default, if you want one |
+|---|---|---|---|
+| **Edit bet** | `BLOCKED_BY_PRODUCT_DECISION` | **Eligibility** — which bets, and until when: any time before kick-off, or a fixed window after placement? **Fees** — free, flat, or a percentage? **Odds-change consent** — a rebooked bet is priced again; does the customer confirm the new price, and what happens if it moved against them between the two screens? **Promotional stakes** — a bonus-funded bet edited into a different one is a wagering-requirement question, not a betting one | Cancel-and-rebook as an immutable replacement: the original stays auditable, the replacement gets its own id, the two are linked, and the customer must accept the new price explicitly. Refuse it outright on bonus-funded bets until the wagering rule is written |
+| **Personalisation** | `BLOCKED_BY_PRODUCT_DECISION` | **What is surfaced** — a fixture, a market, or a *stake size*? A recommended stake is a different product and a different regulatory object from a recommended fixture. **On what signal** — betting history is the obvious one and also the signal that most reliably identifies somebody losing. **When it is suppressed** — under a deposit limit, in cool-off, showing loss-chasing, or flagged by the risk console. **Is it marketing?** `user_preferences.marketing_emails` already records a consent this would have to respect, and Nigerian advertising rules bear on the answer | Fixtures and markets only, never stakes; suppressed entirely for any account under a limit, in cool-off, self-excluded or risk-flagged; and treated as marketing for consent purposes until a regulator says otherwise |
+| **Admin AI** | `BLOCKED_BY_KEY` **and** `BLOCKED_BY_PRODUCT_DECISION` | **Which admin actions may an assistant take at all?** The console approves withdrawals, adjusts exposure and settles bets. **What is draft-only versus executable?** **Whose authority does it act under**, and how is that recorded in the audit trail? | Read-only to begin with: it may summarise and locate, and may draft nothing that moves money. Give it its own tool registry and permission model before a line of it is written |
+| **Fantasy** | `BLOCKED_BY_PRODUCT_DECISION` — **not** a provider | **Scoring rules. Contest formats. Entry fees and whether they are real money. Prize calculation and ties. Squad and transfer rules.** Nothing about this needs a third party; it needs a specification. The page currently says so, in its own words, rather than borrowing "we need a provider" from the casino | None. Do not guess the rules of a money game |
+| **Lucky Numbers** | `BLOCKED_BY_PRODUCT_DECISION`, `BLOCKED_BY_CONTRACT` **and** `BLOCKED_BY_REGULATION` | **Draw mechanics and frequency. Prize tiers and odds. A certified RNG** — self-rolled randomness is not acceptable for a real-money draw. **Which licence covers a lottery-style product**, which is often not the one that covers sports betting | None. This is the one product where building it before the approvals exist is the expensive mistake |
+
 ---
 
 ## 24. What the owner should do next, in order
 
-1. **Review the redesign screenshots and approve or reject the merge.** Nothing
-   in this pass has been merged or deployed.
-2. **Rotate `IDENTITY_PEPPER`** — possible only while every account is a test
+1. **Check what the Vercel production deployment is pointing at.** The redesign
+   is merged to `main` on both remotes, and pushing `main` deploys — so it is
+   live on that Vercel project, against whatever environment variables the
+   project holds. This repository cannot say what those are. **If Production
+   points at the production database, decide whether that is intended; if not,
+   promote the previous deployment back (one click, no git revert).** §0 carries
+   the read-only commands and the safe dashboard actions.
+2. **Decide whether `main` should auto-deploy at all**, and whether a branch
+   push should create a Preview. Both currently do.
+3. **Rotate `IDENTITY_PEPPER`** — possible only while every account is a test
    account, permanently impossible after the first real customer.
-3. Rotate Neon, Upstash, Backblaze, Inngest, then odds-api.io.
-4. Give Railway a database, Redis, and a real `NEXTAUTH_URL`.
-5. Create the least-privilege runtime database credential (§20).
-6. Run `npm run production:check -- --remote=<url>` until it exits 0.
-7. Seed the first administrator.
-8. Approve the synthetic-fixture cleanup and the exposure repair (§22).
-9. Perform the restore drill and record the numbers.
-10. Buy Termii credits and create a Resend account — until then nobody can
-    complete a registration.
-11. Obtain Paystack approval and live keys; prove one small real deposit and one
+4. Rotate Neon, Upstash, Backblaze, Inngest, then odds-api.io.
+5. Give the deployment a database, Redis, and a real `NEXTAUTH_URL`.
+6. Create the least-privilege runtime database credential (§20). **This is the
+   one open item the developer cannot close** — the code, the SQL and the
+   readiness check all require it; only the credential is missing.
+7. Run `npm run production:check -- --remote=<url>` until it exits 0.
+8. Seed the first administrator.
+9. Approve the synthetic-fixture cleanup and the exposure repair (§22).
+10. Perform the restore drill and record the numbers.
+11. **Create a Resend account and buy Termii credits.** Until then **nobody can
+    register and nobody can reset a password** — and note that with no email
+    provider the reset endpoint now answers a uniform 503 rather than leaking
+    which addresses have accounts (finding 41).
+12. Obtain Paystack approval and live keys; prove one small real deposit and one
     small real payout.
-12. Contract a KYC identity provider.
-13. Resolve licensing before taking money from anybody.
+13. Contract a KYC identity provider.
+14. Commission an **independent penetration test**. The internal verification in
+    §20 is automated and does not substitute for it.
+15. Resolve licensing before taking money from anybody.
 
 ---
 
@@ -2221,6 +2383,53 @@ a directory is the wrong instinct on a money system.
 
 Dated, newest first. One entry per completed pass. A pass appears here only
 after its gates have run; "what was attempted" belongs in `NEXT_WORK_REPORT.md`.
+
+### 2026-09-05 — make the documents check themselves, then press every control
+
+**A gap-closure pass on `finish/developer-verification-and-truth`, a local branch
+that is deliberately not pushed** — publishing it would create a Vercel Preview
+deployment, which this task did not authorise. §0 carries the evidence for that
+and the exact commands to publish once the owner decides.
+
+**The documents now check themselves.** `scripts/check-docs.mjs`, seven rules, in
+CI, **proved to fail** on an injected wrong migration total. It found forty
+things; twenty were false positives in the checker itself and were fixed there
+rather than silenced, because a checker with false positives is one people learn
+to skim past. The twenty real ones included §19 understating the migration count
+by two, §0 and §3 disagreeing about readiness blockers, §20 presenting
+every runtime connection as owner-privileged when the local one is restricted,
+§11 still telling customers to type a bank code, a backlog of eight *finished*
+tasks, and a second document declaring itself the source of truth.
+
+**The controls are now declared, not just recorded.** The generated audit says
+what the browser did and can say nothing about a control nobody wrote a test
+for. `e2e/control-manifest.mjs` declares what must be accounted for — browser,
+blocked by a named dependency, or deferred to an integration boundary **with a
+reason** — and `scripts/check-control-coverage.mjs` fails on a gap and on a
+reasonless exclusion.
+
+**Four new browser specs**: the board and betslip, the account and wallet, the
+admin console, and a customer journey that crosses real browser, HTTP and cookie
+boundaries. **Cash-out is now taken in a browser**, not only priced: quoted
+₦190.00, accepted through the authenticated route, balance up by exactly that,
+ticket updated.
+
+**`INTERNAL_SECURITY_VERIFICATION`**, 12 probes — and it earned its place on the
+first run. The **password-reset endpoint was an account-enumeration oracle**:
+500 for an address with an account, 200 for one without, in exactly the
+configuration this is deployed in. Its own comment says it must answer
+identically; the difference came from an error thrown two modules away. Finding
+41.
+
+**And the seed had been hiding something.** `player@demo.local` was created with
+no date of birth — the legacy state stage 5d closed — so every placement was
+refused and **the browser suite had never once placed a bet**. Nothing said so,
+because a correct refusal is indistinguishable from a passing test when nothing
+asserts the success. Finding 40.
+
+Dependency audit: **0 vulnerabilities in what ships**; 4 moderate dev-only from
+`esbuild` via `drizzle-kit`, recorded with exploitability rather than forced
+through a downgrade.
 
 ### 2026-09-04 — the accessibility pass, and a review server that phoned home
 

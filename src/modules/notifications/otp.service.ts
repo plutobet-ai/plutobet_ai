@@ -70,6 +70,52 @@ export class OtpError extends Error {
 }
 
 /**
+ * No delivery provider is configured, and the console fallback is not allowed
+ * here.
+ *
+ * TYPED, AND SEPARATE FROM `OtpError`, BECAUSE OF WHAT IT LEAKED.
+ *
+ * This condition used to be a plain `Error`. `password-reset` catches `OtpError`
+ * and answers with one generic message either way — deliberately, because a
+ * reset form that distinguishes a real address from an unknown one is a free
+ * membership oracle for a gambling site. A plain `Error` fell through that
+ * catch and became a 500, while an address with NO account short-circuited
+ * before any provider was touched and returned 200.
+ *
+ * So the endpoint whose entire design goal is "answer identically" answered
+ * **500 for a customer and 200 for a stranger** the moment it ran in production
+ * without an email provider, which is the state it is deployed in today. Found
+ * by the browser security pass, not by reading the route.
+ *
+ * It is not folded into `OtpError` because the registration route must NOT
+ * treat it as a rate limit — telling a caller "too many codes requested" when
+ * the truth is "this deployment cannot send anything" is a different lie.
+ * Each route now decides, and both decide address-independently.
+ */
+export class OtpProviderUnavailableError extends Error {
+  constructor(readonly channel: OtpChannel) {
+    super(`no ${channel} provider is configured and the console fallback is disabled here`);
+    this.name = "OtpProviderUnavailableError";
+  }
+}
+
+/**
+ * Whether a code could be delivered at all on this channel.
+ *
+ * Depends only on configuration — never on the destination — so a caller can
+ * check it BEFORE looking an address up and answer the same way for everybody.
+ * That ordering is the fix; the type above is only what makes it expressible.
+ */
+export function otpDeliveryAvailable(channel: OtpChannel): boolean {
+  const configured =
+    channel === "SMS"
+      ? Boolean(process.env.TERMII_API_KEY && process.env.TERMII_SENDER_ID)
+      : Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+  // Outside production the console fallback is a legitimate delivery path.
+  return configured || process.env.NODE_ENV !== "production";
+}
+
+/**
  * Codes are stored as HMAC digests under a server-held secret.
  *
  * A plain hash of six digits is trivially reversed by precomputation, so the
@@ -154,14 +200,13 @@ export class OtpService {
       params.channel === "SMS" ? this.sms.name === "console" : this.email.name === "console";
 
     if (usingConsole && process.env.NODE_ENV === "production") {
-      throw new Error(
-        `refusing to issue a ${params.channel} code in production with no provider configured: ` +
-          "the console fallback returns the one-time code in the API response, which would let " +
-          "anyone verify a destination they do not control. Configure " +
-          (params.channel === "SMS"
-            ? "TERMII_API_KEY and TERMII_SENDER_ID"
-            : "RESEND_API_KEY and RESEND_FROM"),
-      );
+      /*
+       * A TYPED error, so a caller can answer identically for every address.
+       * As a plain `Error` this escaped the password-reset route's catch and
+       * turned that endpoint into an account-enumeration oracle — see
+       * `OtpProviderUnavailableError`.
+       */
+      throw new OtpProviderUnavailableError(params.channel);
     }
 
     const destination =

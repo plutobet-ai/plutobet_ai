@@ -113,8 +113,18 @@ export const CONTROL_MANIFEST = [
   { page: "/signin", control: "Forgot password link", coverage: "browser" },
   { page: "/signin", control: "Unsafe callback rejected", coverage: "browser" },
   { page: "/register", control: "Date of birth", coverage: "browser" },
-  { page: "/register", control: "Registration (adult)", coverage: "browser" },
-  { page: "/register", control: "Registration (duplicate)", coverage: "browser" },
+  {
+    page: "/register",
+    control: "Registration (adult)",
+    coverage: "integration-boundary",
+    why: "step 1 cannot complete against the review server. `otp.service` refuses to issue a console-fallback code under a production build — that fallback returns the code in the API response and would let anyone verify a destination they do not control — so no browser can register there. The refusal itself IS browser-asserted as 'Registration OTP guard'. Registration through the real handler is covered by customer-journey.acceptance.spec.ts",
+  },
+  {
+    page: "/register",
+    control: "Registration (duplicate)",
+    coverage: "integration-boundary",
+    why: "behind the same step-1 blocker; the duplicate refusal is asserted in the acceptance journey and in registration.acceptance.spec.ts",
+  },
   { page: "/forgot-password", control: "Password reset request", coverage: "browser" },
   { page: "any", control: "Sign out", coverage: "browser" },
   {
@@ -195,11 +205,12 @@ export const CONTROL_MANIFEST = [
   { page: "/bets", control: "Cash out — accept full", coverage: "browser" },
   { page: "/bets", control: "Cash out — ticket updated", coverage: "browser" },
   { page: "/bets", control: "My bets list", coverage: "browser" },
+  { page: "/bets", control: "Cash out — partial option offered", coverage: "browser" },
   {
     page: "/bets",
-    control: "Cash out — partial",
+    control: "Cash out — partial taken",
     coverage: "integration-boundary",
-    why: "no customer-facing partial control is rendered; the service and its HTTP route are covered by cashout-exposure and http-cashout acceptance specs, and general.md §15 records that the UI takes the whole offer",
+    why: "the panel DOES offer 'Take half and leave the rest running', and the browser asserts that choice is presented. Taking it is left to cashout-exposure.acceptance.spec.ts, which can assert the half that keeps running and the exposure released exactly once — the arithmetic a browser cannot see. An earlier version of this row claimed no partial control was rendered at all, which was wrong and was found by reading the component",
   },
   {
     page: "/bets",
@@ -238,6 +249,64 @@ export const CONTROL_MANIFEST = [
     control: "Step-up authentication",
     coverage: "integration-boundary",
     why: "step-up is held server-side in Redis and fails closed; rbac-http.acceptance.spec.ts asserts the server refusal, which is the control. A browser can only show the prompt",
+  },
+  { page: "/admin", control: "Admin screens render", coverage: "browser" },
+  { page: "/admin", control: "Cross-user access refusal", coverage: "browser" },
+  { page: "/admin/roles", control: "Support agent blocked from super-admin action", coverage: "browser" },
+
+  // ------------------------------------------------- journey-level assertions
+  { page: "/wallet", control: "Stake debited exactly", coverage: "browser" },
+  { page: "any", control: "QA funding unreachable by a customer", coverage: "browser" },
+  { page: "/register", control: "Registration OTP guard", coverage: "browser" },
+
+  /*
+   * ------------------------------------------- INTERNAL_SECURITY_VERIFICATION
+   *
+   * Automated probes through the real HTTP surface, on the disposable local
+   * stack. NOT a penetration test: nobody creative tried to break this, a list
+   * of known shapes was fired at it and the answers recorded. An independent
+   * test stays outstanding external work.
+   */
+  { page: "any", control: "Authentication bypass refused", coverage: "browser" },
+  { page: "any", control: "Error-message identifier leakage", coverage: "browser" },
+  { page: "any", control: "Cross-user object access refused", coverage: "browser" },
+  { page: "/api/webhooks/paystack", control: "Webhook signature enforced", coverage: "browser" },
+  { page: "any", control: "Idempotency-key conflict refused", coverage: "browser" },
+  { page: "/sports", control: "Injection payloads handled as text", coverage: "browser" },
+  { page: "/", control: "No secret in client JavaScript", coverage: "browser" },
+  { page: "/api/odds", control: "Rate limiting holds under a burst", coverage: "browser" },
+  { page: "any", control: "No test-only route in a production build", coverage: "browser" },
+  { page: "/account/date-of-birth", control: "Missing-DOB wagering bypass refused", coverage: "browser" },
+  { page: "/pluto", control: "AI money action requires confirmation", coverage: "browser" },
+  {
+    page: "any",
+    control: "Session fixation and revocation",
+    coverage: "integration-boundary",
+    why: "a revoked session is downgraded on its NEXT request, and the sign-in flow issues a fresh token; auth-secret and session acceptance specs assert both directly. A browser can only observe the effect one request later",
+  },
+  {
+    page: "any",
+    control: "CSRF on state-changing routes",
+    coverage: "integration-boundary",
+    why: "NextAuth issues and verifies the CSRF token for its own endpoints, and every money route is same-origin and cookie-authenticated with SameSite set on the session. Forging a cross-site POST needs a second origin, which a loopback review server does not have",
+  },
+  {
+    page: "/kyc",
+    control: "File-upload type, size and filename validation",
+    coverage: "integration-boundary",
+    why: "the upload path writes to object storage, and the review server blanks the B2 credentials on purpose (finding 31), so a browser upload has nowhere legitimate to go. kyc.acceptance.spec.ts drives type, size and malicious-filename cases against local disposable storage",
+  },
+  {
+    page: "any",
+    control: "Sandbox provider cannot boot as production",
+    coverage: "integration-boundary",
+    why: "asserted at construction in ephemeral-guard.acceptance.spec.ts, which is where the decision is made. A running review server has already chosen its provider, so a browser cannot observe the choice being refused",
+  },
+  {
+    page: "any",
+    control: "Dependency vulnerability audit",
+    coverage: "integration-boundary",
+    why: "`npm audit` is a supply-chain check over the lockfile, not a control a browser can press. Its findings and their exploitability are recorded in general.md §20",
   },
 ];
 
