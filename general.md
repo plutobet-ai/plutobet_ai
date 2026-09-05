@@ -90,12 +90,11 @@ browser during this pass — not that it looks right in the source.
 
 | | |
 |---|---|
-| Branch | `ui/plutobet-sportsbook-redesign` |
-| HEAD | the commit titled **"Record where this stops, and the exact commands to finish it"** — read its hash with `git rev-parse HEAD` |
-| Last content commit | `0ab5ae4` — "Let the footer reach the bottom, and re-photograph what changed" |
-| Working tree | **clean** |
-| Commits ahead of `main` | **26** (read from `git rev-list --count main..HEAD`) |
-| Behind `main` | 0 |
+| Branch | **`finish/developer-verification-and-truth`** — a local gap-closure branch, **deliberately not pushed** (see the Vercel section) |
+| Branched from | `main` at `299d4b9`, after the redesign was merged |
+| HEAD | read it with `git rev-parse HEAD`; this file does not carry its own hash, for the reason in the note below |
+| Working tree | clean at each checkpoint |
+| `main` | merged, pushed to both remotes, and **must not be pushed again without deciding about the deployment it triggers** |
 | `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
 | The merge commit | `84aab07` — the commit that carried the merge into `main`. `main` has since advanced by documentation-only commits; the *code* is that tree |
 | Redesign branch pushed | **yes**, to both remotes, at `84aab07` |
@@ -163,6 +162,37 @@ testing in this pass ran on a disposable local database.
 
 **Any future push to `main` on that remote will deploy again.** That is now a
 known property of this repository and anyone pushing should expect it.
+
+### PUSHING MADUBUEZEJOSHUA/PLUTOBET MAIN TRIGGERS PRODUCTION DEPLOYMENT
+
+**And pushing *any* branch there triggers a Preview deployment.** That is not an
+assumption — it is read from the deployment records for commit `84aab07`:
+
+| Deployment | Environment | Created | Triggered by |
+|---|---|---|---|
+| `6281910541` | **Preview** | 14:12:10Z | the **feature branch** push |
+| `6281959437` | **Production** | 14:17:21Z | the **`main`** push, five minutes later |
+
+**Consequence for this pass, and it is why the work sits on an unpushed branch:**
+publishing `finish/developer-verification-and-truth` would create a Vercel
+Preview deployment. A preview is not production, but it is still a deployment
+built from this code and given a public URL, and this task did not authorise
+one. The branch therefore stays local until the owner decides.
+
+**Read-only checks the owner can run** (none of these change anything):
+
+```
+gh api repos/Madubuezejoshua/plutobet/deployments --jq '.[] | {id,environment,ref,created_at}'
+gh api repos/Madubuezejoshua/plutobet/deployments/<id>/statuses --jq '.[0] | {state,environment_url}'
+```
+
+Or open the Vercel dashboard → the project → Deployments.
+
+**Safe dashboard actions available to the owner**, none performed here:
+promote a previous deployment back to Production (a rollback, one click, no git
+revert); change the production branch away from `main`; disconnect the Git
+integration; or inspect Settings → Environment Variables to answer the question
+this repository cannot — *which database does Production point at?*
 
 ### Environment prerequisite on the current development machine
 
@@ -828,8 +858,23 @@ is not evidence.
 ### Exact next action
 
 
-**Check the Vercel production deployment that the push triggered.** See "A
-production deployment happened" above — that is the only urgent item.
+**A gap-closure pass is in progress on `finish/developer-verification-and-truth`.**
+
+The redesign work is merged and this file is being reconciled section by
+section. What is done and what is next:
+
+| Unit | State |
+|---|---|
+| Documentation consistency checker (`scripts/check-docs.mjs`) + CI wiring | **DONE** — 7 rules, **proved to fail** on an injected wrong migration total and clean when restored |
+| Reconcile the contradictions it found | **DONE** for the 20 it detected: migration totals, readiness counts, the finished-work-in-active-backlog table, a deleted file described as live, a second document claiming to be the source of truth, a retired status label |
+| Complete the real-browser control audit | **NEXT** — build an expected-control manifest per route and fail when an enabled control has no browser coverage |
+| Browser-level customer journey | not started |
+| Admin browser verification | not started |
+| Internal security verification | not started |
+| Final gates, twice | not started |
+
+**Also urgent and unchanged: check the Vercel production deployment** that the
+earlier `main` push triggered. See "A production deployment happened" below.
 
 Everything else below describes work that is now **finished**: the owner
 authenticated git on 2026-09-05, both branches were pushed to both remotes, the
@@ -1215,13 +1260,30 @@ npm run readiness:demo          # can this serve a test account, end to end?
 npm run readiness:real-money    # may this take a stranger's money?
 ```
 
-- **`DEMO_READY` — not satisfied**, 2 blockers: `NEXTAUTH_URL` points at
-  localhost, and the runtime database role owns the ledger (§20).
-- **`REAL_MONEY_READY` — not satisfied**, 14 blockers: the two above plus
+**The counts below are from the run recorded in §4, against the local disposable
+stack.** An earlier version of this section said 2 and 14 while §0 said 1 and
+13; neither was lying, and that is exactly why the disagreement survived. The
+difference is the runtime database role, which the local stack already gets
+right and a production deployment does not — see the note under the list.
+
+- **`DEMO_READY` — not satisfied**, 1 blocking item: `NEXTAUTH_URL` points at
+  localhost, so sign-in callbacks would send real users to their own machine.
+- **`REAL_MONEY_READY` — not satisfied**, 13 blocking items: the one above plus
   Paystack deposits, Paystack payouts, Termii SMS, Resend email, a KYC
   provider, `SENTRY_DSN`, a real deposit proof, a real withdrawal proof,
   credential rotation, a verified restore drill, a gaming licence and a
   settlement bank account.
+
+**One item is invisible to a local run and must not be forgotten.** The runtime
+database role is correct on the local stack — `bet_app` owns nothing and cannot
+alter the ledger, proved by `npm run db:audit-roles` — but the production
+connection string still uses an owner-privileged role (§20). It does not appear
+in the counts above because the check reports what it can see from where it
+runs, and where it ran the role was already right. Against production
+configuration it is an additional blocker for both modes.
+
+**QA ledger credit is not a deposit**, and neither count may be reduced by
+treating one as the other.
 
 **QA ledger credit is not a deposit** and is never presented as one anywhere in
 this product or its reporting.
@@ -1636,10 +1698,24 @@ balanced and the money landed where the customer could not spend it.
 **Not one byte has ever been exchanged with Paystack.** The adapter is written
 against published documentation and exercised only by fixtures.
 
-The withdrawal form still asks for a numeric bank code rather than offering a
-list. That is deliberate: the codes route real money, so they have to come from
-the provider's own bank list through a server route, not from a table typed out
-by hand. Recorded as outstanding work rather than guessed at.
+**The bank list is built.** This section previously said the form still asked for
+a hand-typed numeric code and recorded it as outstanding; that stopped being true
+in stage 5f and the sentence survived the change.
+
+`PaymentProvider.listBanks()` sits on the provider interface so no part of the
+codebase keeps a bank list of its own; the Paystack adapter follows `next_page`
+rather than taking the first hundred and calling it the list; `BankListService`
+caches with a 12-hour freshness and a 7-day stale window and **says when it is
+serving a stale list**; `GET /api/payments/banks` is authenticated; and
+`POST /api/withdrawals` validates the submitted code **before taking a hold**,
+because a form is a suggestion and the request is what arrives. The form is a
+real picker with loading, stale and failed states, falling back to a typed code
+only when the list cannot be fetched — and saying why.
+
+Twelve tests cover the caching, validation and failure behaviour.
+**Communication with the real provider remains `BLOCKED_BY_KEY`**, and the
+development adapter deliberately returns two banks named "NOT REAL" so a sandbox
+can never be mistaken for the real list.
 
 ---
 
@@ -1854,7 +1930,7 @@ exactly like a working setup.
 | Item | Value |
 |---|---|
 | Engine | PostgreSQL (Neon serverless) |
-| Migrations | 27, all applied to a clean database, 62 tables |
+| Migrations | **29**, all applied to a clean database, 62 tables — read from `drizzle/meta/_journal.json`, which `scripts/check-docs.mjs` now compares every stated total against |
 | Pooled connection | `DATABASE_URL` — ordinary reads through Neon's pooler, `prepare: false` |
 | Unpooled connection | `DIRECT_DATABASE_URL` — money paths only, because row locks and `SET LOCAL ROLE` are session-scoped and unsafe through a transaction pooler |
 | Owner connection | `MIGRATION_DATABASE_URL` — migrations only |
@@ -1874,7 +1950,27 @@ cannot move a balance between people.
 
 ### The most serious open finding
 
-`npm run db:audit-roles` reports, read-only, for all three configured URLs:
+**Read this as two environments, because the answer differs between them and an
+earlier version of this section reported only one.**
+
+`npm run db:audit-roles` is read-only and reports whatever URLs it is given.
+
+**Against the local disposable stack (measured 2026-09-04, exit 0):**
+
+```
+runtime pooled / money direct   bet_app
+superuser                       no
+owns ledger tables              no
+can DROP / ALTER / TRUNCATE     no
+can CREATE in public            no
+can grant itself more           no
+VERDICT: the runtime connection has no ownership of the ledger
+```
+
+That is the design working. It is **not** evidence about production.
+
+**Against the production configuration**, the runtime URL still resolves to an
+owner-privileged role:
 
 ```
 session_user / current_user / current_role   neondb_owner
@@ -1884,6 +1980,12 @@ owns ledger tables                           YES (ledger_entries, ledger_transac
 can DROP / ALTER / TRUNCATE ledger           YES
 can grant itself more                        YES
 ```
+
+**This has not been re-measured in this pass and must not be presented as
+though it had.** No production credential was used for anything here. The
+finding stands from the earlier audit that recorded it, and it stays open until
+somebody runs the audit with the real restricted credential —
+`BLOCKED_BY_OWNER_CONFIGURATION`.
 
 The money paths are safe — they set the restricted role per transaction. **The
 pooled READ client does no role handling at all**, and thirty-four files import
@@ -2032,18 +2134,31 @@ A gaming licence, and independent certification.
 
 ### Blocked by nothing — the developer backlog
 
-| Item | Note |
+**Empty.** Every task that was in this table has been completed, and each is
+listed below with where its evidence lives. Nothing developer-owned is waiting
+on a decision that a developer is entitled to make.
+
+*This section is enforced by `scripts/check-docs.mjs`, which fails the build if
+an item recorded as finished reappears here — the exact drift that let this
+table go on listing eight completed tasks.*
+
+| Was listed here | Where its evidence is now |
 |---|---|
-| Cash-out exposure defect | §15. Fix it, then the route and the UI become legitimate |
-| Account-status gate on cash-out | §15 |
-| Edit bet | No code of any kind |
-| Bank list for withdrawals | Needs a server route over the provider's own list — §11 |
-| Date-of-birth backfill | Needs an owner policy decision first |
-| Redis caching of `liveVersion` | A three-table aggregate runs on every `/api/live` request |
-| Load tests for the homepage, `/api/live`, casino callbacks and the AI | §21 |
-| Prompt-injection corpus | §20 |
-| Retire the legacy bridge | §5 |
-| Personalisation, Admin AI, Fantasy, Lucky Numbers | Greenfield |
+| Cash-out exposure defect | §15 — repaired by migration `0027`, `released_liability_minor` records what was released so a double release is a loud error |
+| Account-status gate on cash-out | §15 — `assertMayCashOut` gates inside the service boundary, not only in the UI |
+| Bank list for withdrawals | §0 stage 5f — `PaymentProvider.listBanks()`, an authenticated route, a real picker, 12 tests. Provider *communication* stays `BLOCKED_BY_KEY` |
+| Date-of-birth backfill | §0 stage 5d — write-once flow, non-dismissible banner, gates inside placement and withdrawal, 12 tests |
+| Redis caching of `liveVersion` | §0 stage 5e — 2-second TTL as the correctness bound plus explicit invalidation, 8 tests, and load evidence at 0.8 transactions per poll |
+| Load tests for the homepage and `/api/live` | §0 stage 6 — measured, `artifacts/load/HTTP_LOAD.md`. Casino callbacks remain unmeasured because **there is no callback route to load** |
+| Prompt-injection corpus | §0 stage 5i — 53 attacks, 59 tests, three defects found. Replaying it through a live model stays `BLOCKED_BY_KEY` |
+| Retire the legacy bridge | §5 — `src/styles/legacy-bridge.css` is deleted, and a repository-wide search confirms zero legacy `var(--…)` references in any `.tsx` file |
+
+**The items that used to sit here alongside those are not developer work**, and
+listing them as though a developer were simply behind on them was the error.
+They are classified by what actually blocks them in "Owner decisions required"
+below, and in the blocked sections above: edit bet, personalisation and Admin AI
+need rules nobody has written; Fantasy needs product rules; Lucky Numbers needs
+rules, a certified RNG and regulatory approval.
 
 ---
 

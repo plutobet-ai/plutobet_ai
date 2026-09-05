@@ -147,8 +147,10 @@ npx neonctl branches delete <branch-id> --project-id "$NEON_PROJECT_ID"
 
 ## What "verified" would require
 
-This document may be marked `VERIFIED_WORKING` only after steps 2–6 have actually
-been executed and the numbers recorded. Running `npm run db:verify-restore`
+This document may be marked `VERIFIED_END_TO_END` only after steps 2–6 have
+actually been executed and the numbers recorded. (It previously used a label
+that has since been retired from the vocabulary in `general.md` §2, because it
+did not say what kind of evidence it stood on.) Running `npm run db:verify-restore`
 against production — which has been done, and passes — proves the *checks* work.
 It does not prove a *restore* works, and the two must not be confused in any
 status document.

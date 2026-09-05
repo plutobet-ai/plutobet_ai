@@ -12,8 +12,14 @@
 >
 > | This document says | Current truth | Where |
 > |---|---|---|
-> | Migrations 24 | **27** (0024 heartbeats, 0025 poll fairness, 0026 settlement outbox) | §34 |
+> | Migrations 24 | **29** — read from `drizzle/meta/_journal.json`, never from a document | `general.md` §19 |
 > | Stage 7 HTTP/RBAC `NOT_IMPLEMENTED` | **Complete** — 27 tests across four areas | §9 |
+>
+> **Figures inside the dated sections below are deliberately left alone.** They
+> record what a pass measured on the day it ran, and editing them to today's
+> numbers would turn evidence into a guess. `scripts/check-docs.mjs` treats this
+> file as a historical log for that reason, and holds it only to the rules about
+> what a document may claim about *itself*.
 > | Stage 9 fixture-sync `NOT_IMPLEMENTED` | **Batched**; target not demonstrated, limiting factor documented | §11 |
 > | Registered scheduler untested | **9 acceptance tests** drive the real handler | §6 |
 > | Defect 6 (poll starvation) open | **Fixed**, 7 tests | §8 |
@@ -634,7 +640,7 @@ here because §32 asked for exactly this work; the authoritative summary is
 | Production readiness audit | **Done.** `npm run production:check` — exits non-zero while a launch-blocker remains, and never prints a value |
 | Owner rotation checklist | **Done.** `OWNER_LAUNCH_CHECKLIST.md`, `IDENTITY_PEPPER` first |
 | Restore drill | **Blocked** — no Neon API key. `docs/restore-runbook.md` written; the verification half is implemented and tested (`npm run db:verify-restore`, 8/8) |
-| Status documents reconciled | **Done.** `docs/history/PROJECT_STATUS.md` is now the single source of truth; this file and four others are banner-marked historical |
+| Status documents reconciled | **Done** *(superseded)*. At the time this was written `docs/history/PROJECT_STATUS.md` held that role. **`general.md` is now the only current-status document**; that file and four others are historical evidence, and so is this one — see the banner at the top |
 
 ### 33.2 Four defects found by RUNNING the scheduler
 

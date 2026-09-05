@@ -98,6 +98,17 @@ jobs:
         # so a finding cannot republish a credential into this public log.
         run: node scripts/secret-scan.mjs
 
+      - name: Documentation consistency
+        # `general.md` is the single source of truth for a money system, and it
+        # drifted the way long documents always do: edited in one section and not
+        # another, until §23 still listed cash-out as broken after §15 recorded it
+        # repaired. This compares the documents against each other and against the
+        # repository — migration totals against the journal, readiness counts
+        # against each other, finished work against the active backlog, deleted
+        # files against the filesystem. It cannot tell whether a claim is TRUE;
+        # that is still the author's job.
+        run: node scripts/check-docs.mjs
+
       - name: Migration validation
         # Applies every migration to a CLEAN throwaway PostgreSQL, so this proves
         # the migrations can rebuild the schema from nothing — not merely that
