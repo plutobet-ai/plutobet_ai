@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { publicRoute, type RouteContext } from "@/lib/api/handler";
 import { RATE_RULES } from "@/lib/api/rate-limit";
-import { createOtpService, OtpError } from "@/modules/notifications/otp.service";
+import {
+  createOtpService,
+  OtpError,
+  OtpProviderUnavailableError,
+} from "@/modules/notifications/otp.service";
 import { InvalidPhoneNumberError } from "@/modules/notifications/phone";
 
 export const runtime = "nodejs";
@@ -51,6 +55,21 @@ export const POST = publicRoute(
         return NextResponse.json(
           { error: "INVALID_PHONE", message: "enter a valid Nigerian mobile number" },
           { status: 422 },
+        );
+      }
+      /*
+       * A misconfigured deployment is not a rate limit, and must not be dressed
+       * as one. This used to escape as a plain `Error` and become an opaque
+       * 500; 503 says the true thing — the service cannot send anything right
+       * now — without naming which variable is missing to an anonymous caller.
+       */
+      if (error instanceof OtpProviderUnavailableError) {
+        return NextResponse.json(
+          {
+            error: "DELIVERY_UNAVAILABLE",
+            message: "Verification codes cannot be sent right now. Please try again later.",
+          },
+          { status: 503 },
         );
       }
       if (error instanceof OtpError) {

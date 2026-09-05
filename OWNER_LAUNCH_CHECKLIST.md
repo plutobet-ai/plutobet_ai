@@ -14,6 +14,51 @@ file is only the list of things that need an account holder.
 
 ---
 
+## ⚠ PUSHING MADUBUEZEJOSHUA/PLUTOBET MAIN TRIGGERS PRODUCTION DEPLOYMENT
+
+**And pushing any branch there triggers a Preview deployment.** Read this before
+you push anything.
+
+This is not a warning about what might happen. It is read from the deployment
+records for commit `84aab07`:
+
+| Deployment | Environment | Created | Triggered by |
+|---|---|---|---|
+| `6281910541` | **Preview** | 14:12:10Z | the **feature branch** push |
+| `6281959437` | **Production** | 14:17:21Z | the **`main`** push, five minutes later |
+
+A pre-existing Vercel ↔ GitHub integration on that repository deploys on every
+push to `main`. No deployment command exists in this codebase and none was run.
+`plutobet-ai/plutobet_ai` has no such integration and deploys nothing.
+
+**What that means, and what this repository cannot tell you.** The deployed app
+runs against whatever environment variables the **Vercel project** holds. Those
+live in your dashboard, not here. **Whether Production is serving against the
+production database is a question only you can answer, and it is the first thing
+to check.**
+
+**Read-only checks — none of these change anything:**
+
+```
+gh api repos/Madubuezejoshua/plutobet/deployments --jq '.[] | {id,environment,ref,created_at}'
+gh api repos/Madubuezejoshua/plutobet/deployments/<id>/statuses --jq '.[0] | {state,environment_url}'
+```
+
+Or: Vercel dashboard → the project → **Deployments**, and → **Settings →
+Environment Variables**.
+
+**Safe actions available to you, none of them performed here:**
+
+| Action | Effect |
+|---|---|
+| Promote a previous deployment to Production | A rollback. One click, no git revert, repository untouched |
+| Settings → Git → change the production branch away from `main` | `main` pushes stop deploying |
+| Disconnect the Git integration | No push deploys anything |
+
+**Railway was never deployed to** and no live provider was activated.
+
+---
+
 ## 0. Before anything else — read this
 
 Several credentials were pasted into a chat transcript during development. Treat

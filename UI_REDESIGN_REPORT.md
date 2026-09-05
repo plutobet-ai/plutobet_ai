@@ -1,9 +1,10 @@
 # PlutoBet — Interface redesign
 
 **Branch:** `ui/plutobet-sportsbook-redesign`
-**Merged:** no. **Deployed:** no. **Waiting on:** visual review of the
-screenshots named in §8.
-**Date:** 2026-09-02
+**Merged:** **yes**, into `main` by fast-forward on 2026-09-05.
+**Deployed:** **yes** — a Vercel production deployment fires on every push to
+`main`; see `general.md` §0 for what that does and does not mean.
+**Date written:** 2026-09-02. **Status updated:** 2026-09-05.
 
 For the state of the platform as a whole, read [`general.md`](general.md). This
 document is the detail of one pass.
@@ -221,11 +222,19 @@ the interface changes, and a binary nobody diffs does not belong in history.
 
 ---
 
-## 9. What is deliberately still legacy
+## 9. What was deliberately still legacy — and has since been retired
 
-`src/styles/legacy-bridge.css` re-points the old design system's variables at
+> **`src/styles/legacy-bridge.css` has been DELETED.** The paragraphs below
+> describe why it existed and what its end condition was; that condition was met
+> in stage 5h and the file is gone. A repository-wide search now confirms zero
+> legacy `var(--…)` references in any `.tsx` file. Two survivors in
+> `account/preferences` were missed by the original audit — it checked classes
+> and not inline `style` props — and rendered near-white text on a white card
+> until the accessibility run found them (`general.md` finding 38).
+
+`src/styles/legacy-bridge.css` re-pointed the old design system's variables at
 the new tokens, scoped to the `.sb` shell, so pages still carrying legacy classes
-render in the new palette without a find-and-replace across the deposit,
+rendered in the new palette without a find-and-replace across the deposit,
 withdrawal, KYC and safer-gambling forms — which is exactly the code where a
 careless replacement does real damage.
 

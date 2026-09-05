@@ -23,6 +23,12 @@ export default defineConfig({
   testDir: "./e2e",
   outputDir: "./artifacts/playwright",
   /*
+   * Clears the previous run's per-project audit fragments, once, before any
+   * project starts. It cannot live in a `beforeAll` — that runs once per
+   * project, and the second browser would erase the first one's rows.
+   */
+  globalSetup: "./e2e/global-setup.ts",
+  /*
    * Serial. These tests place bets, cash them out and settle them against one
    * shared database; running them in parallel would make each one's balance
    * assertions depend on what another happened to be doing.

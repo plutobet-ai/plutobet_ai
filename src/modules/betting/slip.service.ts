@@ -1,4 +1,11 @@
 import { sql } from "drizzle-orm";
+/*
+ * From `../responsible/errors`, not from the service. The errors module exists
+ * separately so a caller can import the error WITHOUT pulling in the service,
+ * which opens the unpooled money-path client at module load — that import once
+ * made a public odds endpoint refuse to start without money credentials.
+ */
+import { RgViolationError } from "../responsible/errors";
 import { InsufficientFundsError } from "../wallet/errors";
 import { walletService, WalletService } from "../wallet/wallet.service";
 import {
@@ -116,6 +123,36 @@ function customerReason(error: unknown): { code: string; message: string } {
     return {
       code: "ACCOUNT_RESTRICTED",
       message: "Your account cannot place bets at the moment.",
+    };
+  }
+  /*
+   * A SAFER-GAMBLING REFUSAL MUST SAY SO. This is the one refusal on a
+   * gambling product where telling the customer IS the feature — a limit that
+   * stops somebody silently has done half its job and taught them nothing.
+   *
+   * It was missing, and the result was that a customer stopped by their own
+   * daily stake limit saw "This could not be placed", indistinguishable from a
+   * full market or a technical fault. `handler.ts` already states the rule for
+   * the route boundary — "the player needs to know a limit or exclusion
+   * stopped them, not just that something failed" — but a slip catches its
+   * combinations one at a time, so the error never reached it.
+   *
+   * MAPPED BY `limitType`, NOT ECHOED. `assertNotExcluded` has an "unknown
+   * user" branch whose message carries a user UUID, and this is the boundary
+   * where a domain message becomes something a stranger can read.
+   */
+  if (error instanceof RgViolationError) {
+    const byType: Record<string, string> = {
+      SELF_EXCLUSION: "This account is self-excluded, so it cannot place bets.",
+      COOL_OFF: "You are in a cooling-off period, so betting is paused.",
+      WAGER: "This would take you past the stake limit you set for yourself.",
+      LOSS: "This would take you past the loss limit you set for yourself.",
+      DEPOSIT: "This would take you past the deposit limit you set for yourself.",
+      SESSION: "You have reached the session length you set for yourself.",
+    };
+    return {
+      code: `RG_${error.limitType}`,
+      message: byType[error.limitType] ?? "A safer-gambling limit you set has stopped this bet.",
     };
   }
   return { code: "UNAVAILABLE", message: "This could not be placed." };

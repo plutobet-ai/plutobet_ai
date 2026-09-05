@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { expect, test } from "@playwright/test";
 import { DEMO_PLAYER, signIn, watchForProblems } from "./support";
+import { record, routeFor, viewportName } from "./audit";
 
 /**
  * The interaction audit: every enabled control, clicked or submitted.
@@ -22,61 +22,12 @@ import { DEMO_PLAYER, signIn, watchForProblems } from "./support";
  * Only what actually happened in a browser is recorded.
  */
 
-/**
- * ONE FILE PER PROJECT, merged afterwards.
- *
- * A single shared file did not work: `beforeAll` runs once per project, so the
- * second project truncated the first's rows and the audit silently reported
- * only the last browser that ran. Per-project files are assembled by
- * `scripts/build-ui-review.mjs`, which also regenerates the contact sheet — so
- * the report is a product of the run rather than of remembering.
+/*
+ * The audit helpers moved to `./audit`. They are shared now, because several
+ * spec files contribute rows to one record of one run — and because the
+ * truncation had to move somewhere that happens once per RUN rather than once
+ * per project. That is `global-setup.ts`.
  */
-function auditPath(project: string): string {
-  return `artifacts/ui-review/interaction-audit-${project}.md`;
-}
-
-test.beforeAll(({}, testInfo) => {
-  mkdirSync("artifacts/ui-review", { recursive: true });
-  writeFileSync(auditPath(testInfo.project.name), "", "utf8");
-});
-
-/** One audited interaction. Appends its row as a side effect of running. */
-function record(
-  project: string,
-  row: {
-    page: string;
-    viewport: string;
-    control: string;
-    action: string;
-    observed: string;
-    route: string;
-    status?: string;
-  },
-) {
-  const status = row.status ?? "VERIFIED_IN_REAL_BROWSER";
-  appendFileSync(
-    auditPath(project),
-    `| ${row.page} | ${row.viewport} | ${row.control} | ${row.action} | ${row.observed} | ${row.route} | \`${status}\` |\n`,
-    "utf8",
-  );
-}
-
-function viewportName(page: Page): string {
-  const size = page.viewportSize();
-  return size ? `${size.width}×${size.height}` : "unknown";
-}
-
-/** Captures the request a control causes, so the audit can name the route. */
-async function routeFor(page: Page, act: () => Promise<void>, match: RegExp): Promise<string> {
-  const waiting = page
-    .waitForRequest((request) => match.test(request.url()), { timeout: 20_000 })
-    .catch(() => null);
-  await act();
-  const request = await waiting;
-  if (!request) return "—";
-  const url = new URL(request.url());
-  return `${request.method()} ${url.pathname}${url.search}`;
-}
 
 test.describe("global chrome", () => {
   test("the brand mark returns to the board", async ({ page }) => {
