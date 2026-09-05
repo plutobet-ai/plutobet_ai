@@ -93,8 +93,27 @@ export class OtpError extends Error {
  * Each route now decides, and both decide address-independently.
  */
 export class OtpProviderUnavailableError extends Error {
+  /**
+   * The message stays LONG and specific on purpose.
+   *
+   * Making this a typed error first replaced it with a terse one, and
+   * `otp-production-guard.acceptance.spec.ts` failed — correctly. This text is
+   * an OPERATOR's only clue: it has to name the variables to configure and
+   * explain the consequence of the fallback, because "no provider configured"
+   * tells somebody staring at a log nothing they can act on.
+   *
+   * It never reaches a customer. Both routes answer with their own curated 503
+   * wording precisely so this can stay detailed.
+   */
   constructor(readonly channel: OtpChannel) {
-    super(`no ${channel} provider is configured and the console fallback is disabled here`);
+    super(
+      `refusing to issue a ${channel} code in production with no provider configured: ` +
+        "the console fallback returns the one-time code in the API response, which would let " +
+        "anyone verify a destination they do not control. Configure " +
+        (channel === "SMS"
+          ? "TERMII_API_KEY and TERMII_SENDER_ID"
+          : "RESEND_API_KEY and RESEND_FROM"),
+    );
     this.name = "OtpProviderUnavailableError";
   }
 }

@@ -160,6 +160,31 @@ async function main(): Promise<void> {
     await tx.execute(sql.raw("SET LOCAL ROLE app_role"));
 
     for (const fixture of FIXTURES) {
+      /*
+       * IDEMPOTENT BY THE FIXTURE ITSELF, not by a fresh UUID.
+       *
+       * This used to mint `demo-${randomUUID()}` every run, so seeding twice
+       * produced two Arsenal v Chelsea, and seeding eight times produced eight.
+       * The board then rendered a wall of repeated matches — and because the
+       * review screenshots are a committed deliverable, anyone reading them
+       * would reasonably conclude the BOARD duplicates fixtures. It does not;
+       * the seed did.
+       *
+       * Skipping rather than deleting: some of these events have bets against
+       * them from earlier test runs, and removing an event a bet points at is
+       * not a tidy-up, it is data loss.
+       */
+      const [existing] = await tx.execute<{ id: string }>(sql`
+        SELECT id FROM events
+        WHERE provider = 'demo'
+          AND league = ${fixture.league}
+          AND home = ${fixture.home}
+          AND away = ${fixture.away}
+          AND status = 'PENDING'
+        LIMIT 1
+      `);
+      if (existing) continue;
+
       const [event] = await tx.execute<{ id: string }>(sql`
         INSERT INTO events (provider, provider_event_id, sport, league, home, away, starts_at, status)
         VALUES (

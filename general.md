@@ -874,7 +874,14 @@ section. What is done and what is next:
 | Browser-level customer journey | **DONE** — `e2e/journey.spec.ts`: sign in, bet ₦200, balance moves exactly ₦200, admin sees it, cash out taken, sign out |
 | `INTERNAL_SECURITY_VERIFICATION` | **DONE** — `e2e/security.spec.ts`, 12 probes; found finding 41 |
 | Dependency audit | **DONE** — 0 in shipped dependencies; 4 moderate dev-only, recorded with exploitability |
-| Final gates, twice | **IN PROGRESS** |
+| Final gates, twice | **DONE** — on a freshly reset disposable database. vitest **76 files / 989 passed / 1 skipped** ×2 identical; playwright **273 passed / 13 skipped / 0 failed** ×2 identical; control coverage clean both times |
+
+**The active developer backlog is empty.** Everything still outstanding needs an
+owner, a key, a contract, a product decision, a regulator or a human — each
+named in §23 and in the owner-decision table.
+
+**Nothing was pushed.** This branch is local, and publishing it would create a
+Vercel Preview deployment (evidence in §0). `main` was not touched.
 
 **Also urgent and unchanged: check the Vercel production deployment** that the
 earlier `main` push triggered. See "A production deployment happened" below.
@@ -992,25 +999,42 @@ commit of this pass. What it added:
 ### Latest gate results
 
 
-Run on **2026-09-04** on the current machine, after the missing MSVC runtime
-described above was worked around. Every one is a full run, not a subset.
+Run on **2026-09-05**, on a **freshly reset disposable database** — the previous
+one had been seeded eight times (finding 45) and carried limits set by an
+earlier test run (finding 47), and neither is a state a gate should be measured
+against. Every one is a full run, not a subset.
 
-| Gate | Result | When |
-|---|---|---|
-| `npx tsc --noEmit` | **exit 0**, 0 errors | 2026-09-04 |
-| `npx eslint .` | **exit 0**, 0 errors, 0 warnings | 2026-09-04 |
-| `node scripts/secret-scan.mjs` | **clean**, 450 files, 15 rules | 2026-09-04 |
-| `git diff --check` | **exit 0**, no whitespace or conflict markers | 2026-09-04 |
-| `npx vitest run` | **76 files, 989 passed, 1 skipped, 0 failed**, exit 0 — **run twice after the final code change, identical both times** | 2026-09-04 |
-| `npm run build` | **exit 0**, `deploy: target=local (no migrations)` | 2026-09-04 |
-| `npx playwright test` | **139 passed, 13 skipped, 0 failed**, exit 0, 6.9m (desktop + Pixel 7) — **run twice, identical** | 2026-09-04 |
-| Screenshots + contact sheet | **28 screenshots** re-captured after the final fix; `artifacts/ui-review/00-contact-sheet.png` regenerated | 2026-09-04 |
-| Interaction audit | **38 rows**, generated from the run, `artifacts/ui-review/INTERACTION_AUDIT.md` | 2026-09-04 |
-| `node scripts/check-migrations.mjs` | **29 of 29** apply to a clean database, 62 tables, exit 0 | 2026-09-04 |
-| `npx tsx scripts/smoke-admin.ts` | **18 of 18** admin queries clean, exit 0 | 2026-09-04 |
-| `npx tsx scripts/audit-db-roles.ts` | **exit 0** — the runtime role owns nothing and cannot DROP, ALTER or TRUNCATE the ledger | 2026-09-04 |
-| `readiness:demo` | **NOT DEMO READY**, 1 blocker — correct, see below | 2026-09-04 |
-| `readiness:real-money` | **NOT REAL_MONEY_READY**, 13 blockers — correct, see below | 2026-09-04 |
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | **exit 0**, 0 errors |
+| `npx eslint .` | **exit 0**, 0 errors, **0 warnings** |
+| `node scripts/secret-scan.mjs` | **clean**, 15 rules |
+| `node scripts/check-docs.mjs` | **clean**, 13 documents, 7 rules |
+| `git diff --check` | **exit 0**, no whitespace or conflict markers |
+| `npx vitest run` | **76 files, 989 passed, 1 skipped, 0 failed** — **run twice after the final code change, identical both times** |
+| `npm run build` | **exit 0**, `deploy: target=local (no migrations)` |
+| `npx playwright test` | **286 tests: 273 passed, 13 skipped, 0 failed** (desktop 1440×900 + Pixel 7) — **run twice, identical** |
+| `node scripts/check-control-coverage.mjs` | **exit 0** — 137 controls declared, 109 browser-covered, every one with an audit row; 10 blocked and 18 integration-boundary, each with a stated reason |
+| Screenshots + contact sheet | **28 screenshots** re-captured on the clean database; `artifacts/ui-review/00-contact-sheet.png` regenerated and inspected |
+| Interaction audit | **242 rows**, generated from the run, `artifacts/ui-review/INTERACTION_AUDIT.md` |
+| `node scripts/check-migrations.mjs` | **29 of 29** apply to a clean database, 62 tables, exit 0 |
+| `npm audit --omit=dev` | **0 vulnerabilities** in what ships |
+| `npx tsx scripts/smoke-admin.ts` | **18 of 18** admin queries clean, exit 0 |
+| `npx tsx scripts/audit-db-roles.ts` | **exit 0** — the runtime role owns nothing and cannot `DROP`, `ALTER` or `TRUNCATE` the ledger. **Local stack only** |
+| `readiness:demo` | **NOT DEMO READY**, 1 blocking item — correct, see below |
+| `readiness:real-money` | **NOT REAL_MONEY_READY**, 13 blocking items — correct, see below |
+| `INTERNAL_SECURITY_VERIFICATION` | **12 of 12** probes pass, §20 |
+
+**The vitest total is unchanged at 989** because this pass added browser tests,
+not unit tests. The single skip is the opt-in live-provider contract, which runs
+only when `ODDS_API_KEY` is set; it is deliberately unset, so the skip is by
+design. **It is recorded as external, not as passing.** There are no `.only`, no
+`test.todo`, and no other skips.
+
+**The browser suite grew from 152 to 286 tests.** All 13 skips are by design:
+six measured-column checks that `test.skip` on the mobile project because a
+phone viewport is narrower than the column they measure, and seven responsive
+sweeps that override the viewport themselves and so run once rather than twice.
 
 **The two readiness scripts are red and that is the right answer.** Every
 blocker they name is an owner, key, contract or regulatory item: no payment
@@ -1099,6 +1123,9 @@ trap. Getting there took five defects; they are findings 33, 34, 35 and 38.
 | 40 | **The demo seed created a customer who could not bet, and every test passed anyway.** `player@demo.local` was inserted with no `date_of_birth`, which is exactly the legacy state stage 5d closed — so the account carried the "Confirm your date of birth" banner and every placement was refused with the generic "none of the combinations on this slip could be placed". **The browser suite had therefore never once placed a bet**, and nothing said so, because a correct refusal is indistinguishable from a passing test when no test asserts the success | **FIXED** — the seed sets a date of birth for the demo player. Found the moment a test tried to place a bet and read the confirmation |
 | 41 | **The password-reset route was an account-enumeration oracle.** Its whole design goal is to answer identically whether or not an address has an account — the comment in the route says so. But the OTP service's refusal to use its console fallback in production threw a **plain `Error`**, which fell past the route's `OtpError` catch and became a **500**, while an address with *no* account short-circuited before any provider was touched and returned **200**. So in exactly the configuration this is deployed in — a production build with no Resend key — **a customer's address answered 500 and a stranger's answered 200.** For a gambling site that is a privacy problem before it is a security one | **FIXED** — a typed `OtpProviderUnavailableError`, and the route now checks `otpDeliveryAvailable()` **before** looking the address up, so the answer cannot depend on the address. Both cases return the same 503. Found by the browser security pass, not by reading the route |
 | 42 | The same misconfiguration surfaced on the registration OTP route as an **opaque 500**. A deployment that cannot send anything is not a server fault to be swallowed, and it is not a rate limit either | **FIXED** — 503 with a message that says codes cannot be sent, without naming which variable is missing to an anonymous caller |
+| 46 | **A customer stopped by their own safer-gambling limit was not told so.** Placement runs the responsible-gambling checks, which raise `RgViolationError`; the slip catches each combination's error and maps it through `customerReason`, **which had no case for it** — so the refusal collapsed to the generic "This could not be placed", indistinguishable from a full market or a technical fault. `handler.ts` already states the rule at the route boundary — *"the player needs to know a limit or exclusion stopped them, not just that something failed"* — but a slip catches its combinations one at a time and the error never reached it. On a gambling product this is the one refusal where telling the customer **is** the feature: a limit that stops somebody silently has done half its job | **FIXED** — mapped by `limitType` to curated wording for self-exclusion, cool-off, stake, loss, deposit and session. **Mapped, not echoed**: `assertNotExcluded` has an "unknown user" branch whose message carries a user UUID, and this is the boundary where a domain message becomes something a stranger can read |
+| 47 | **My own browser test made a money test flaky.** `account-and-wallet.spec.ts` set a ₦4,000 daily *wager* limit on the shared demo account, and it runs before the journey — so once the day's staked total crossed that, every later placement was refused. The mobile journey passed in one run and failed in the next. Running the suite twice is what exposed it; a single green run would have shipped it | **FIXED** — the limits are set high enough not to bite. A limit can only be *lowered* immediately (raising waits 24 hours), so a run cannot undo a low one it has set, which makes choosing a high value the only fix that does not poison the suite. The refusal itself is asserted in `responsible.acceptance.spec.ts`, where the account is disposable |
+| 45 | **The demo seed multiplied the board every time it ran.** Fixtures were inserted with a fresh `demo-${randomUUID()}` on every run, with no check for one already there — so seeding eight times during this pass produced **eight copies of every match**, and the board rendered a wall of repeated fixtures. Because the review screenshots are a **committed deliverable**, anyone reading them would reasonably conclude the *board* duplicates fixtures. It does not; the seed did. Found by looking at the regenerated contact sheet | **FIXED** — the seed skips a fixture that already exists as a PENDING demo event. It *skips* rather than deletes: some of those events carry bets from earlier runs, and removing an event a bet points at is data loss, not tidying |
 | 44 | **Two internal build-phase labels were rendered in the admin console.** `/admin/risk` and `/admin/users` each told the operator that missing tooling "arrives with the compliance tooling in **phase 20**". A phase number is an internal roadmap reference and means nothing to the person reading it; the redesign removed these from the customer-facing side and missed the admin pages, which were deliberately excluded from that pass | **FIXED** — both now say what is missing and why (its own permission, a written reason, an audit row) without a phase number |
 | 43 | **Duplicate DOM ids on every board page.** `BetslipPanel` is rendered twice — as the sticky column and inside the mobile sheet — and below 1180px the column is *hidden by CSS, not unmounted*. So `id="sb-stake"`, `id="sb-stake-err"` and the `<label htmlFor>` pointing at them existed twice. `htmlFor` and `aria-describedby` both resolve to the **first** match in document order, which on a phone is the hidden desktop copy — so the stake field a customer actually types into had its label and its error message bound to a different element. axe missed it: `duplicate-id` is retired for non-ARIA ids, and the error paragraph only exists while an error is showing, which it was not during the scan | **FIXED** — `useId()` gives each panel its own ids. Found by Playwright refusing to guess between two matches, on the mobile project |
 

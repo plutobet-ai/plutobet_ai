@@ -243,10 +243,29 @@ test.describe("safer gambling", () => {
     return routeFor(page, async () => submit.click(), /\/api\/responsible/);
   }
 
+  /*
+   * THE AMOUNTS ARE HIGH ON PURPOSE, AND THAT IS A BUG FIX.
+   *
+   * They were ₦5,000 / ₦4,000 / ₦3,000. These tests run before the journey —
+   * alphabetically — and they set the limits on the SHARED demo account, so
+   * once the day's staked total crossed ₦4,000 the wager limit refused every
+   * later bet. The journey then failed on the mobile project in one run and
+   * passed in another: a flaky money test, caused by a test rather than by the
+   * product.
+   *
+   * A limit only lowers immediately; raising one waits 24 hours. So a run
+   * cannot undo a low limit it has set, which makes choosing a high one the
+   * only fix that does not poison the rest of the suite. The control is
+   * exercised either way — what is asserted is that the limit saves and is
+   * shown back, not the size of the number.
+   *
+   * The refusal itself is asserted where it can be set up and torn down
+   * safely: `responsible.acceptance.spec.ts`.
+   */
   for (const [type, label, control, amount] of [
-    ["DEPOSIT", "Deposit limit", "Set a deposit limit", "5000"],
-    ["WAGER", "Wager limit", "Set a stake limit", "4000"],
-    ["LOSS", "Loss limit", "Set a loss limit", "3000"],
+    ["DEPOSIT", "Deposit limit", "Set a deposit limit", "9000000"],
+    ["WAGER", "Wager limit", "Set a stake limit", "8000000"],
+    ["LOSS", "Loss limit", "Set a loss limit", "7000000"],
   ] as const) {
     test(`${label.toLowerCase()} can be set and is shown back`, async ({ page }) => {
       const route = await setLimit(page, type, amount);

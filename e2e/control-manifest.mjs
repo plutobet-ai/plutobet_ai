@@ -58,7 +58,14 @@ export const CONTROL_MANIFEST = [
   { page: "/", control: "League filter", coverage: "browser" },
   { page: "/", control: "League collapse", coverage: "browser" },
   { page: "/", control: "Country collapse", coverage: "browser" },
-  { page: "/", control: "Competition favourite (star)", coverage: "browser" },
+  /*
+   * ONE entry, not two. This listed both "Competition favourite (star)" and
+   * "Competition favourite" — the same control under two names, because two
+   * specs had recorded it differently. Only the desktop spec used the "(star)"
+   * form, so the gate reported a mobile gap for a control mobile does not
+   * render at all: the rail is hidden below 900px by design, and the audit says
+   * so in its own row.
+   */
   { page: "/", control: "Competition favourite", coverage: "browser" },
   { page: "/", control: "Fixture favourite", coverage: "browser" },
   { page: "/", control: "Favourite cross-tab sync", coverage: "browser" },
