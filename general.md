@@ -92,9 +92,12 @@ browser during this pass — not that it looks right in the source.
 |---|---|
 | Branch | **`finish/developer-verification-and-truth`** — a local gap-closure branch, **deliberately not pushed** (see the Vercel section) |
 | Branched from | `main` at `299d4b9`, after the redesign was merged |
-| HEAD | read it with `git rev-parse HEAD`; this file does not carry its own hash, for the reason in the note below |
-| Working tree | clean at each checkpoint |
+| HEAD | the commit titled **"Tell a customer when their own limit stopped them, and stop lying in the screenshots"** — read its hash with `git rev-parse HEAD` |
+| Commits on this branch | 4, listed under "Files being modified right now" |
+| Working tree | **clean** |
 | `main` | merged, pushed to both remotes, and **must not be pushed again without deciding about the deployment it triggers** |
+| Pushed | **no** — publishing even this branch creates a Vercel Preview deployment, which was not authorised |
+| **Production mutations performed** | **NONE.** No production database, provider, dashboard or deployment was written to. Every run in this pass used the local disposable Postgres and Redis, review-only secrets, and a review server that refuses a non-loopback host and blanks every provider credential (findings 31 and 32) |
 | `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
 | The merge commit | `84aab07` — the commit that carried the merge into `main`. `main` has since advanced by documentation-only commits; the *code* is that tree |
 | Redesign branch pushed | **yes**, to both remotes, at `84aab07` |
@@ -940,8 +943,19 @@ above, which is the current statement on it.
 ### Files being modified right now
 
 
-**Nothing. The working tree is clean**, and `main` on both remotes carries every
-commit of this pass. What it added:
+**Nothing. The working tree is clean.**
+
+**On `finish/developer-verification-and-truth`, unpushed** — the gap-closure
+pass:
+
+| Commit | What it carries |
+|---|---|
+| `9b770d8` | `scripts/check-docs.mjs` + CI, and the twenty real contradictions it found |
+| `e2b7b43` | The control manifest and coverage gate; board, betslip and admin browser coverage; findings 40 and the four test defects |
+| `83d15a0` | `INTERNAL_SECURITY_VERIFICATION`, the browser customer journey, account/wallet coverage, and findings 41–44 |
+| `85a19ef` | Findings 45–47, the reset database, and the final gates run twice |
+
+**Already on `main` at both remotes** — the earlier passes:
 
 | Commit | What it carries |
 |---|---|
