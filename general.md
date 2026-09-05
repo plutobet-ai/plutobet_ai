@@ -90,13 +90,14 @@ browser during this pass — not that it looks right in the source.
 
 | | |
 |---|---|
-| Branch | **`finish/developer-verification-and-truth`** — a local gap-closure branch, **deliberately not pushed** (see the Vercel section) |
+| Branch | **`finish/developer-verification-and-truth`** — the gap-closure branch, **pushed to `plutobet` only** (see the Vercel section for why that remote and not the other) |
 | Branched from | `main` at `299d4b9`, after the redesign was merged |
 | HEAD | the commit titled **"Tell a customer when their own limit stopped them, and stop lying in the screenshots"** — read its hash with `git rev-parse HEAD` |
 | Commits on this branch | 4, listed under "Files being modified right now" |
 | Working tree | **clean** |
 | `main` | merged, pushed to both remotes, and **must not be pushed again without deciding about the deployment it triggers** |
-| Pushed | **no** — publishing even this branch creates a Vercel Preview deployment, which was not authorised |
+| Pushed | **yes, to `plutobet` (`plutobet-ai/plutobet_ai`) on 2026-09-05**, at the owner's instruction, and **not** to `origin`. That repository has **never created a deployment** — checked against its deployments API, which returns none — so publishing there has no deploy consequence. `origin` is the one that deploys |
+| Default push remote | `remote.pushDefault = plutobet`, set at the owner's instruction, so a bare `git push` goes to the non-deploying remote |
 | **Production mutations performed** | **NONE.** No production database, provider, dashboard or deployment was written to. Every run in this pass used the local disposable Postgres and Redis, review-only secrets, and a review server that refuses a non-loopback host and blanks every provider credential (findings 31 and 32) |
 | `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
 | The merge commit | `84aab07` — the commit that carried the merge into `main`. `main` has since advanced by documentation-only commits; the *code* is that tree |
@@ -176,11 +177,21 @@ assumption — it is read from the deployment records for commit `84aab07`:
 | `6281910541` | **Preview** | 14:12:10Z | the **feature branch** push |
 | `6281959437` | **Production** | 14:17:21Z | the **`main`** push, five minutes later |
 
-**Consequence for this pass, and it is why the work sits on an unpushed branch:**
-publishing `finish/developer-verification-and-truth` would create a Vercel
-Preview deployment. A preview is not production, but it is still a deployment
-built from this code and given a public URL, and this task did not authorise
-one. The branch therefore stays local until the owner decides.
+**Consequence, and how it was resolved.** Publishing
+`finish/developer-verification-and-truth` **to `origin`** would create a Vercel
+Preview deployment — a preview is not production, but it is still a deployment
+built from this code and given a public URL. So the branch was held back until
+the owner decided, and the owner chose the other remote.
+
+**`plutobet-ai/plutobet_ai` has never created a deployment.** That is read from
+its deployments API, which returns none, against `origin`'s five — all by
+`vercel[bot]`. The branch is therefore published there and **not** to `origin`,
+and `remote.pushDefault` is set to `plutobet` so a bare `git push` cannot reach
+the deploying remote by accident.
+
+**The asymmetry is now the safety mechanism, and it is worth stating plainly:**
+one remote deploys and one does not. Anyone pushing to `origin` should expect a
+deployment; anyone pushing to `plutobet` should not.
 
 **Read-only checks the owner can run** (none of these change anything):
 
@@ -883,8 +894,10 @@ section. What is done and what is next:
 owner, a key, a contract, a product decision, a regulator or a human — each
 named in §23 and in the owner-decision table.
 
-**Nothing was pushed.** This branch is local, and publishing it would create a
-Vercel Preview deployment (evidence in §0). `main` was not touched.
+**Pushed to `plutobet` only.** The branch is published at
+`plutobet-ai/plutobet_ai`, which has never created a deployment, and **not** to
+`origin`, which deploys on every push. **`main` was not touched on either
+remote** — it is still `299d4b9` on both.
 
 **Also urgent and unchanged: check the Vercel production deployment** that the
 earlier `main` push triggered. See "A production deployment happened" below.
@@ -2427,10 +2440,13 @@ after its gates have run; "what was attempted" belongs in `NEXT_WORK_REPORT.md`.
 
 ### 2026-09-05 — make the documents check themselves, then press every control
 
-**A gap-closure pass on `finish/developer-verification-and-truth`, a local branch
-that is deliberately not pushed** — publishing it would create a Vercel Preview
-deployment, which this task did not authorise. §0 carries the evidence for that
-and the exact commands to publish once the owner decides.
+**A gap-closure pass on `finish/developer-verification-and-truth`, published to
+`plutobet-ai/plutobet_ai` and deliberately NOT to `origin`.** The two remotes
+are not equivalent: `origin` runs a Vercel integration that deploys on every
+push and has five deployments to show for it, while `plutobet` has never created
+one. The branch was held back until the owner chose, and the owner chose the
+remote that does not deploy. `remote.pushDefault` now points there. **`main` was
+not touched on either remote.**
 
 **The documents now check themselves.** `scripts/check-docs.mjs`, seven rules, in
 CI, **proved to fail** on an injected wrong migration total. It found forty
