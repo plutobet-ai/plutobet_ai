@@ -103,19 +103,19 @@ browser during this pass — not that it looks right in the source.
 | Branch | **`main`** — the gap-closure branch has been merged into it. `npm run ci:docs` compares this row against `git rev-parse --abbrev-ref HEAD` and fails if they differ, because this header once said `main` for a whole pass whose work was somewhere else, and then said the branch for a commit that was on `main` |
 | Branched from | `main` at `299d4b9`, after the redesign was merged |
 | HEAD | read it with `git rev-parse HEAD`. No hash is written here — see the note below for why one cannot be |
-| Commits on this branch | read with `git rev-list --count main..HEAD`; `ci:docs` checks any number stated here against it |
-| Newest commits NOT on any remote | **the ones added by this pass.** The first six are on `plutobet`; everything after them exists **only on this machine** until the owner runs the publication command below. `git log --oneline plutobet/finish/developer-verification-and-truth..HEAD` lists exactly which |
+| Commits ahead of the remote | **none.** `git log --oneline plutobet/main..HEAD` is empty; `git status` reports a clean tree. Both are read from git, never repeated from here |
+| Anything unpublished | **nothing.** Every commit of every pass is on `plutobet/main`. The gap-closure branch was merged into `main` and `main` was pushed; there is no local-only work and no branch waiting to be published |
 | Working tree | **clean** |
 | `main` | **advanced on `plutobet` only.** It carries PR #1 plus a merge of the three commits made after it. **`origin/main` has NOT moved and must not be pushed without deciding about the production deployment it triggers** |
 | Pushed | **to `plutobet` only**, at the owner's instruction — the branch, then `main`. That repository has **never created a deployment**; its deployments API returned none immediately before the push, against `origin`'s thirty. Publishing there has no deploy consequence. **`origin` is the one that deploys and was not pushed** |
 | Default push remote | `remote.pushDefault = plutobet`, set at the owner's instruction, so a bare `git push` goes to the non-deploying remote |
 | **Production mutations performed** | **NONE.** No production database, provider, dashboard or deployment was written to. Every run in this pass used the local disposable Postgres and Redis, review-only secrets, and a review server that refuses a non-loopback host and blanks every provider credential (findings 31 and 32) |
-| `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
+| `origin/main` vs `plutobet/main` | **THEY DIFFER, AND DELIBERATELY.** `plutobet/main` carries every pass. `origin/main` is held at the redesign because **pushing it triggers a Vercel production deployment** — see the deployment section. They were briefly identical on 2026-09-05; that is history, not the current state |
 | The merge commit | `84aab07` — the commit that carried the merge into `main`. `main` has since advanced by documentation-only commits; the *code* is that tree |
 | Redesign branch pushed | **yes**, to both remotes, at `84aab07` |
 | Merged to `main` | **yes** — fast-forward, no conflict, no history rewritten, no force |
-| CI | **passed on both repositories**, on every commit pushed to `main` in this pass — "typecheck, test, build" `success` |
-| Deployed | **YES, UNINTENTIONALLY — read the next section** |
+| CI | **read it from the run, not from here.** The result for the exact commit on `plutobet/main` is recorded in §4 and was checked against the Actions API. `origin` has run nothing new, because nothing new was pushed to it |
+| Deployed | **not by any pass on this branch.** `plutobet` has never created a deployment. A Vercel production deployment DID fire earlier from `origin` — read the next section, because it is on a platform this project does not use |
 
 > A previous version of this file said "seven commits". It was wrong, and a
 > later version said `23b595d`/21 after two more commits had landed. Commit
@@ -131,10 +131,16 @@ browser during this pass — not that it looks right in the source.
 > tree — and the command that proves it on demand:
 >
 > ```
-> git ls-remote origin refs/heads/main
-> git ls-remote plutobet refs/heads/main      # expect the same hash
-> git rev-parse "origin/main^{tree}" "plutobet/main^{tree}"   # expect one value twice
+> git rev-parse HEAD                          # what is checked out
+> git ls-remote plutobet refs/heads/main      # expect the SAME hash: it is published
+> git ls-remote origin  refs/heads/main       # expect a DIFFERENT, older hash, on purpose
+> git log --oneline plutobet/main..HEAD       # expect empty: nothing unpublished
 > ```
+>
+> **The two remotes are NOT expected to match.** An earlier version of this
+> block told the reader to expect one hash twice, which was true for a day and
+> then became the opposite of the truth. `origin` is held back because pushing
+> it deploys.
 >
 > If anything in this document disagrees with git, **git is right.**
 
@@ -302,7 +308,7 @@ pinned in CI.
 | 8 | **Security re-verification** | **DONE** for what this pass changed |
 | 9 | Complete gates, twice | **DONE** — vitest and playwright each run twice after the final code change, identical results |
 | 10 | Truthful `general.md` rewrite + changelog | **DONE** — 5 off-vocabulary labels retired, §15 rewritten, `NEXT_WORK_REPORT.md` §37 |
-| 11 | Merge and push, only if every gate passes | **DONE** — merged at `84aab07` by fast-forward, both remotes carry identical commits and trees, CI green on both. A Vercel production deploy fires on every `main` push; see §0 |
+| 11 | Merge and push, only if every gate passes | **DONE** — the redesign merged at `84aab07` by fast-forward, and at that moment both remotes carried identical trees with CI green on both. **That was 2026-09-05 and is history**: `plutobet/main` has since advanced through every later pass and `origin/main` has not moved, deliberately, because a Vercel production deploy fires on every `main` push there. Current state is in the table above |
 
 ### Completed this pass, with evidence
 
@@ -950,7 +956,7 @@ What is done:
 owner, a key, a contract, a product decision, a regulator or a human — each
 named in §23 and in the owner-decision table.
 
-### Exactly what is published, and the exact commands to publish the rest
+### What is published, and what deliberately is not
 
 **Published to `plutobet` only, and nothing was deployed.** The work is on
 `plutobet/main`. `origin` was not pushed.
@@ -988,34 +994,47 @@ git fetch plutobet
 git log --oneline origin/main..plutobet/main   # what main carries and origin does not
 ```
 
-```bash
-# What is local only. Run this first; it is the list being published.
-git log --oneline plutobet/finish/developer-verification-and-truth..HEAD
+**There is nothing left to publish.** The gap-closure branch was merged into
+`main` and `main` was pushed to `plutobet`; `git log --oneline
+plutobet/main..HEAD` is empty and the working tree is clean.
 
-# SAFE: publishes the branch to the remote that has never created a deployment.
-git push plutobet finish/developer-verification-and-truth
+An earlier version of this section carried commands to push that branch. They
+are gone rather than kept for reference: an instruction to publish something
+already published is not harmless documentation, it is an invitation to run a
+push against a remote while believing it is the safe one.
 
-# Verify it landed, and see where each main actually is.
-git ls-remote plutobet refs/heads/finish/developer-verification-and-truth
-git ls-remote plutobet refs/heads/main
-git ls-remote origin  refs/heads/main       # local main and origin/main agree
-```
-
-**Do not run either of these without deciding about a deployment first:**
+**Verify the current state instead of pushing anything:**
 
 ```bash
-git push origin finish/developer-verification-and-truth   # creates a Vercel PREVIEW
-git push origin main                                      # creates a Vercel PRODUCTION deploy
+git rev-parse HEAD                          # what is checked out
+git ls-remote plutobet refs/heads/main      # expect the SAME hash: published
+git ls-remote origin  refs/heads/main       # expect an OLDER hash, deliberately
+git log --oneline plutobet/main..HEAD       # expect empty
+git status --short                          # expect empty
 ```
+
+**These two remain the only dangerous commands in this repository, and neither
+should be run without deciding about a deployment first:**
+
+```bash
+git push origin <any-branch>   # creates a Vercel PREVIEW deployment
+git push origin main           # creates a Vercel PRODUCTION deployment
+```
+
+Note that the Vercel project is on a platform this product does not deploy to —
+the owner uses Railway — so the first question is whether that integration
+should exist at all, not which branch feeds it. §24 action 1.
 
 **Also urgent and unchanged: check the Vercel production deployment** that the
 earlier `main` push triggered. See "A production deployment happened" below.
 
-Everything else below describes work that is now **finished**: the owner
-authenticated git on 2026-09-05, both branches were pushed to both remotes, the
-fast-forward merge into `main` was completed, and CI passed on the exact final
-commit on both repositories. The historical text is kept because it records how
-the blocker was resolved.
+**HISTORICAL FROM HERE TO THE END OF THIS SECTION.** Everything below describes
+a blocker that was resolved on 2026-09-05: the owner authenticated git, the
+redesign branch was pushed to both remotes, the fast-forward merge into `main`
+was completed, and CI passed on that commit on both repositories. **None of it
+describes the current state** — `origin` has had nothing pushed to it since, and
+the sentence "pushed to both remotes" is true only of the redesign. The text is
+kept because it records how the blocker was resolved.
 
 ---
 
@@ -1067,8 +1086,9 @@ above, which is the current statement on it.
 
 **Nothing. The working tree is clean.**
 
-**On `finish/developer-verification-and-truth`, unpushed** — the gap-closure
-pass:
+**HISTORICAL — the gap-closure branch, since merged into `main` and published.**
+These commits are on `plutobet/main`; the branch itself no longer has anything
+that `main` does not:
 
 | Commit | What it carries |
 |---|---|
@@ -1145,7 +1165,7 @@ against. Every one is a full run, not a subset.
 | `npx tsc --noEmit` | **exit 0**, 0 errors |
 | `npx eslint .` | **exit 0**, 0 errors, **0 warnings** |
 | `node scripts/secret-scan.mjs` | **clean**, 15 rules |
-| `node scripts/check-docs.mjs` | **clean**, 13 documents, **14 rules** |
+| `node scripts/check-docs.mjs` | **clean**, 13 documents, **15 rules** |
 | `git diff --check` | **exit 0**, no whitespace or conflict markers |
 | `npx vitest run` | **80 files, 1034 passed, 1 skipped, 0 failed** — **run twice after the final code change, identical both times** |
 | `npm run build` | **exit 0**, `deploy: target=local (no migrations)` |
@@ -1282,6 +1302,7 @@ trap. Getting there took five defects; they are findings 33, 34, 35 and 38.
 | 60 | **`Sec-Fetch-Site: cross-site` and a hostile `Referer` both walked past the origin guard**, answering **201** on a withdrawal. The guard read `Origin` alone: a request whose Origin was stripped, or one where the browser itself declared the request cross-site, was accepted. `Sec-Fetch-Site` is a forbidden header name that page script cannot forge, so it was the strongest available signal and it was being ignored | **FIXED** — the guard refuses `cross-site` fetch metadata outright, then falls back from `Origin` to `Referer`. Applied to `publicRoute` as well, because `/api/ai` and `/api/bookings` read the session cookie and had no origin check at all. 15 unit cases and three browser probes, each asserting the balance and the money invariants are unchanged |
 | 61 | **On the review server the bank list could not be fetched at all.** `[payments] bank list unavailable` appeared in the log on every load and the picker was empty, because the review server is a production build and `createPaymentProvider()` correctly refuses the sandbox there. The withdrawal path only kept working because `isPayableBankCode` deliberately passes when no list can be established — so a made-up bank code went through a check that had nothing to check against, and the tier-1 cap test was passing while posting a bank code the server could not validate | **FIXED** — `paymentProviderForReads()` opens the seam for `listBanks` and `resolveBankAccount` only. `parseWebhook` and `initiateTransfer` still refuse, and the webhook-signature probe passing is what proves the control was not weakened |
 | 62 | **The whole browser suite shared one one-time-code budget, and the eleventh registration in fifteen minutes was refused.** `RATE_RULES.otp` is 10 per IP per 15 minutes — deliberately tight, because issuing a code costs SMS money and registration is the surface a bot uses to mass-create accounts. The suite runs from ONE address, both browser projects issue codes, and the suite takes longer than the window. So a late test asked for a code, was refused, and failed with *"no one-time code was delivered"* — a failure about the mailbox, in a test about self-exclusion. **It passed in one run and failed in the next**, which is the signature of a shared budget rather than a defect | **FIXED IN THE TESTS, NOT THE CONTROL.** Each test that needs a code now presents its own forwarded address, because a test that registers an account IS a different customer and different customers do not share a connection. The limiter still runs, still counts and still refuses. **Flushing Redis between tests was the obvious fix and is the wrong one** — it would have disabled the limiter for the whole run and hidden precisely what `security.spec.ts`'s burst probe exists to find. That probe still fires from a single address and still requires the burst to be shed by refusing |
+| 63 | **The secret scanner could not see a new file, and a pass reported itself complete over a RED CI run.** `secret-scan.mjs` enumerated `git ls-files` — tracked files only — so a brand-new test fixture assigning a Paystack-shaped literal was invisible locally at 491 files and clean, right up to the commit that made it permanent. CI, whose checkout has everything tracked, refused it at 496 files. Two failures in one: a gate reporting on a different file set from the one being published, and a completion claim made from *the push succeeding* rather than from the run passing | **BOTH FIXED.** The literal is assembled rather than written out, so the shape of a credential assignment is not in the repository at all. The scanner now also reads `git ls-files --others --exclude-standard`, catching untracked files while still honouring `.gitignore` — `.env` and `.env.review.local` stay excluded on purpose, because a finding there would print the path of a secret file into a public CI log. No real credential was ever exposed: the value was invented and matches nothing |
 
 **Cash-out is now priced *and taken* in a real browser**, and that is an upgrade
 with a limit. The browser now **quotes the offer, sees the partial choice, accepts the
@@ -1538,12 +1559,51 @@ result.
 | Control coverage | `npm run ci:controls` | **exit 0** — **165 declared: 152 browser, 9 blocked, 4 integration-boundary, 0 hidden**; every browser control has an audit row **in both projects**, and every exclusion carries one of seven accepted reason codes |
 | Interaction audit | `node scripts/build-ui-review.mjs` | **352 rows**, **28 screenshots** — regenerated from the run, not hand-edited |
 | Money invariants | `npm run ci:money` | **exit 0** — all **9** are zero: no unbalanced transaction, no negative wallet, no duplicate payout, no residual exposure, no abandoned outbox item |
-| Documentation | `npm run ci:docs` | **clean** — 13 documents, **14 rules**. Every rule added across these passes was proved to fail on a controlled stale value and clean once corrected; rule 14 was proved against the exact sentence this file carried, *"The last one was accepted with 201"* |
+| Documentation | `npm run ci:docs` | **clean** — 13 documents, **15 rules**. Every rule added across these passes was proved to fail on a controlled stale value and clean once corrected; rule 14 against the exact sentence this file carried, *"The last one was accepted with 201"*, and rule 15 caught two stale unit totals the moment it was switched on |
 | Admin queries | `npm run admin:smoke` | **18 of 18** clean, exit 0 |
 | Database roles | `npm run db:audit-roles` | **exit 0** — the runtime role owns nothing and cannot `DROP`, `ALTER` or `TRUNCATE` the ledger. **Local stack only**; see the limit below |
 | Demo readiness | `npm run readiness:demo` | **exit 1**, correctly — **1 blocking item** (`NEXTAUTH_URL` points at localhost), §3 |
 | Real-money readiness | `npm run readiness:real-money` | **exit 1**, correctly — **13 blocking items**, every one an owner, key, contract or regulatory matter, §3 |
-| CI | GitHub Actions | **green on both remotes** for every commit pushed to `main` in the PREVIOUS pass — "typecheck, test, build" `success`. **The commits made in THIS pass have not been through CI**, because nothing has been pushed |
+| CI | GitHub Actions on `plutobet` | **checked against the Actions API for the exact commit on `plutobet/main`**, not assumed from a previous run. The result is recorded below this table. `origin` has no new run because nothing new was pushed to it |
+
+### CI on `plutobet`, checked against the run rather than assumed
+
+**The previous pass reported itself complete while its CI run was RED.** Commit
+`56c4a11` was pushed, verified by reading the remote hash back, and reported as
+finished. Its GitHub Actions run then failed, and nothing in the reporting
+noticed, because "the push succeeded" had been treated as the end of the job.
+Pushing is not the gate; the run is.
+
+| | |
+|---|---|
+| What failed | **Secret scan**, step 8. Everything after it was skipped, and the "test totals" step then failed too because the suite it reads had never written a results file — one cause, two red steps |
+| Why | A test fixture assigned a Paystack-shaped literal: `PAYSTACK_SECRET_KEY = "sk_test_…"`. The rule that flags that shape is `hardcoded-secret-assignment`, and it was right to |
+| Was a real credential exposed | **No.** The value was invented for a fixture and matches nothing. What was committed is the *shape* of a credential assignment, which is the pattern somebody later edits when they want a test to hit the real API "just once" |
+
+**The interesting half is why the LOCAL scan passed.** `secret-scan.mjs`
+enumerated files with `git ls-files` — **tracked files only**. A brand-new file
+is untracked until it is committed, so it was invisible to every local run right
+up to the commit that made it permanent, and then visible to CI, where a fresh
+checkout has everything tracked. The local run reported **491 files, clean**; the
+same scan after the commit reported **496 files and the finding**. The gate was
+reporting on a different set of files from the one being published, which is the
+one thing a pre-commit gate must never do.
+
+Both halves are fixed: the literal is assembled rather than written out, and the
+scanner now also reads `git ls-files --others --exclude-standard`, so untracked
+files are scanned while `.gitignore` is still honoured — `.env` and
+`.env.review.local` hold real credentials and must stay out, or a finding would
+print the path of the secret file into a public log.
+
+**Verify the current run yourself rather than trusting this paragraph:**
+
+```bash
+gh api repos/plutobet-ai/plutobet_ai/actions/runs --jq \
+  '.workflow_runs[0] | {head_sha, status, conclusion, head_branch}'
+```
+
+Expect `head_sha` to equal `git rev-parse HEAD` and `conclusion` to be
+`success`. If it is not, this file is wrong and the run is right.
 
 **Read the exit code, not the last line.** `npm run readiness:demo | tail -6`
 reports the exit status of `tail`, which is always 0. Both readiness commands
@@ -1581,8 +1641,9 @@ last of those was found by looking at a screenshot, which is not a gate at all.
 
 ## 5. The customer-facing interface
 
-Status: **redesigned, verified in a real browser, and merged to `main` on both
-remotes.**
+Status: **redesigned, verified in a real browser, and merged to `main` on
+`plutobet`.** `origin/main` still carries the redesign alone and is held there
+deliberately, because pushing it deploys — §0.
 
 Evidence: **355 passing Playwright tests** across desktop 1440×900 and a Pixel 7
 profile, **352 audited interactions** in `artifacts/ui-review/INTERACTION_AUDIT.md`, 28
@@ -2933,8 +2994,9 @@ through a downgrade.
 
 **Stages 3, 9, 10 and 11 completed.** The redesign branch was merged into `main`
 by **fast-forward** at `84aab07` and pushed to **both** remotes, which carry
-identical commits and trees. **CI passed on both repositories** for every commit
-pushed to `main`.
+identical commits and trees. **CI passed on both repositories at the time** for
+every commit pushed to `main` in that pass. The remotes have since diverged on
+purpose; §0 carries the current state.
 
 The push was blocked for part of this pass — the machine had no GitHub
 credential — and the merge was deliberately withheld rather than performed

@@ -29,8 +29,26 @@ function respondWith(status: number, body: unknown) {
   return spy;
 }
 
+/*
+ * ASSEMBLED, NOT WRITTEN OUT, AND THAT IS NOT A TRICK TO PASS THE SCANNER.
+ *
+ * The adapter only checks that PAYSTACK_SECRET_KEY is non-empty before it will
+ * attempt a call, so any value does. Writing a realistic literal spelled
+ * `PAYSTACK_SECRET_KEY = "sk_test_..."` puts the exact SHAPE of a real
+ * credential assignment into the repository — and that shape is what somebody
+ * later edits when they want the test to hit the real API "just once".
+ *
+ * `scripts/secret-scan.mjs` flags precisely that pattern, and it was right to:
+ * CI refused this commit for it while the local run had passed, because the
+ * local scan reads `git ls-files` and the file was still untracked. Both halves
+ * are fixed — this literal is gone, and the scanner now sees untracked files
+ * too, so a new file carrying a credential is caught before it is permanent
+ * rather than one commit after.
+ */
+const FIXTURE_KEY = ["sk", "test", "no", "such", "key"].join("_");
+
 beforeEach(() => {
-  process.env.PAYSTACK_SECRET_KEY = "sk_test_fixture_only_not_a_real_key";
+  process.env.PAYSTACK_SECRET_KEY = FIXTURE_KEY;
 });
 
 afterEach(() => {

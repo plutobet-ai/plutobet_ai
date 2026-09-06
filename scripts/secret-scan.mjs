@@ -109,9 +109,37 @@ const KNOWN_SAFE = [
   "fake-db-password-never-echoed",
 ];
 
+/**
+ * Everything git can see: tracked files, AND untracked files it is not ignoring.
+ *
+ * THE GAP THIS CLOSES, AND HOW IT WAS FOUND. This read `git ls-files` alone, so
+ * it scanned only TRACKED files. A brand-new file is untracked until it is
+ * committed — which means a file carrying a credential passed this gate every
+ * single time it was run, right up to the commit that made it permanent, and
+ * then failed in CI where the checkout has everything tracked. That is exactly
+ * what happened: a test fixture assigning a Paystack-shaped literal was clean
+ * locally at 491 files and refused by CI, and re-running locally after the
+ * commit reported 496 files and the finding. The gate was reporting on a
+ * different set of files from the one being published.
+ *
+ * `--others --exclude-standard` adds untracked files while still honouring
+ * `.gitignore`, which matters more here than anywhere else: `.env` and
+ * `.env.review.local` hold real credentials and are ignored on purpose. Scanning
+ * them would report a finding for every line and print the path of the secret
+ * file into a public CI log, so the one category deliberately left out stays
+ * left out.
+ */
 function tracked() {
-  const out = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return out.split("\0").filter(Boolean);
+  const list = (args) =>
+    execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+      .split("\0")
+      .filter(Boolean);
+
+  const files = new Set(list(["ls-files", "-z"]));
+  for (const file of list(["ls-files", "--others", "--exclude-standard", "-z"])) {
+    files.add(file);
+  }
+  return [...files];
 }
 
 function stagedFiles() {
