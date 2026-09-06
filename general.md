@@ -5,16 +5,19 @@ Every other document in the repository is either a runbook, an owner checklist,
 or historical evidence of one pass. Where any of them disagrees with this file,
 this file is right.
 
-**Last updated:** 2026-09-05
-**Branch described:** `finish/developer-verification-and-truth` — the
-gap-closure branch, cut from `main` at `299d4b9`
-**Merged to `main`:** **no.** `main` still carries the redesign work and has not
-moved. **Pushed:** **partly** — the first six commits are on
-`plutobet-ai/plutobet_ai`; the newest are **local only** until the owner says
-otherwise (§0 has the exact commands). **Deployed:** **no deployment was made in
-this pass.** A Vercel production deployment fired during the PREVIOUS pass when
-`main` was pushed to `origin`, and §0 explains what that does and does not mean.
-**Railway: not deployed.**
+**Last updated:** 2026-09-06
+**Branch described:** `main`, which now carries the completed gap-closure pass
+**Merged to `main`:** **yes**, in two steps and with no history rewritten. The
+owner merged PR #1 on `plutobet-ai/plutobet_ai`, and the three commits made
+after it were merged forward on top of that. Nothing was rebased or forced —
+those commits were already published.
+**Pushed:** to **`plutobet-ai/plutobet_ai` only**, at the owner's instruction.
+**`origin` was not pushed, and its `main` has not moved.** Verify both with the
+`git ls-remote` commands in §0 rather than trusting a hash written here.
+**Deployed:** **no.** `plutobet-ai/plutobet_ai` has **never created a
+deployment** — checked against its deployments API immediately before the push,
+which returned none, against `origin`'s thirty. `origin` deploys on every push
+and was deliberately left alone. **Railway: not deployed.**
 Commit count, branch and remote state are recorded in §0, read from git, and
 checked by `npm run ci:docs` — never repeated from this header.
 
@@ -93,14 +96,14 @@ browser during this pass — not that it looks right in the source.
 
 | | |
 |---|---|
-| Branch | **`finish/developer-verification-and-truth`** — the gap-closure branch. `npm run ci:docs` compares this row against `git rev-parse --abbrev-ref HEAD` and fails if they differ, because this header once said `main` for a whole pass whose work was somewhere else |
+| Branch | **`main`** — the gap-closure branch has been merged into it. `npm run ci:docs` compares this row against `git rev-parse --abbrev-ref HEAD` and fails if they differ, because this header once said `main` for a whole pass whose work was somewhere else, and then said the branch for a commit that was on `main` |
 | Branched from | `main` at `299d4b9`, after the redesign was merged |
 | HEAD | read it with `git rev-parse HEAD`. No hash is written here — see the note below for why one cannot be |
 | Commits on this branch | read with `git rev-list --count main..HEAD`; `ci:docs` checks any number stated here against it |
 | Newest commits NOT on any remote | **the ones added by this pass.** The first six are on `plutobet`; everything after them exists **only on this machine** until the owner runs the publication command below. `git log --oneline plutobet/finish/developer-verification-and-truth..HEAD` lists exactly which |
 | Working tree | **clean** |
-| `main` | **untouched by this pass** — still `299d4b9` on both remotes, not merged into, not pushed. It **must not be pushed without deciding about the deployment it triggers** |
-| Pushed | **partly.** The branch exists on `plutobet` (`plutobet-ai/plutobet_ai`) as of 2026-09-05, at the owner's instruction, and **not** on `origin`. That repository has **never created a deployment** — checked against its deployments API, which returns none — so publishing there has no deploy consequence. `origin` is the one that deploys |
+| `main` | **advanced on `plutobet` only.** It carries PR #1 plus a merge of the three commits made after it. **`origin/main` has NOT moved and must not be pushed without deciding about the production deployment it triggers** |
+| Pushed | **to `plutobet` only**, at the owner's instruction — the branch, then `main`. That repository has **never created a deployment**; its deployments API returned none immediately before the push, against `origin`'s thirty. Publishing there has no deploy consequence. **`origin` is the one that deploys and was not pushed** |
 | Default push remote | `remote.pushDefault = plutobet`, set at the owner's instruction, so a bare `git push` goes to the non-deploying remote |
 | **Production mutations performed** | **NONE.** No production database, provider, dashboard or deployment was written to. Every run in this pass used the local disposable Postgres and Redis, review-only secrets, and a review server that refuses a non-loopback host and blanks every provider credential (findings 31 and 32) |
 | `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
@@ -912,43 +915,41 @@ named in §23 and in the owner-decision table.
 
 ### Exactly what is published, and the exact commands to publish the rest
 
-**Nothing in this pass was pushed and nothing was deployed.** Six commits of
-this branch are on `plutobet`; the gap-closure commit on top of them is **local
-only**. Read the exact list rather than trusting a number here — the command is
-the first one below, and it is correct on any day.
+**Published to `plutobet` only, and nothing was deployed.** The work is on
+`plutobet/main`. `origin` was not pushed.
 
-**Push it to `plutobet`, not to `origin`.** Checked again on 2026-09-06 against
-the deployments API: `plutobet-ai/plutobet_ai` has created **0 deployments,
-ever**; `Madubuezejoshua/plutobet` has created **30**, by `vercel[bot]`, one per
-push. The two remotes are not interchangeable and the difference is a
-production deployment.
+**How it got there, in two steps and with no history rewritten.** The owner
+merged **PR #1** on GitHub, which put the first six commits onto
+`plutobet/main` as merge commit — and that merge changed nothing: its tree is
+byte-identical to the branch tip it merged. The three commits made afterwards
+were then merged forward locally. Nothing was rebased and nothing was forced,
+because those commits were already published and rewriting published history is
+not on the table.
 
-**`plutobet/main` HAS MOVED, AND NOT FROM THIS MACHINE.** Read on 2026-09-06:
+**`plutobet` is the safe remote and `origin` is not.** Checked against the
+deployments API immediately before the push: `plutobet-ai/plutobet_ai` has
+created **0 deployments, ever**; `Madubuezejoshua/plutobet` has created **30**,
+by `vercel[bot]`, one per push. The two are not interchangeable and the
+difference is a production deployment.
 
-| ref | commit |
+**THE TWO REMOTES' `main` BRANCHES NOW DIFFER, DELIBERATELY.**
+
+| ref | state |
 |---|---|
-| local `main` | `299d4b9` |
-| `origin/main` | `299d4b9` — agrees |
-| **`plutobet/main`** | **a different commit, and one this clone does not have** — `git cat-file -t` cannot resolve it |
+| `origin/main` | **unchanged at `299d4b9`** — the redesign only. Pushing it deploys, so it was left alone |
+| `plutobet/main` | **ahead** — PR #1 plus the merge of the three commits after it |
 
-An earlier version of this file told the reader to expect `299d4b9` on both
-remotes. That is now false for `plutobet`, so the instruction has been removed
-rather than left to mislead. **Nothing in this pass pushed `main` anywhere** —
-the two remotes' `main` branches genuinely disagree, and the newer commit came
-from somewhere else.
-
-**Do not reconcile them by guessing.** Fetch it and look before deciding
-anything:
+This was briefly recorded as an unexplained divergence, because a commit
+appeared on `plutobet/main` that this clone did not have and no push from here
+had created it. Fetching answered it: the owner had merged **PR #1** on GitHub.
+That is worth leaving in the record — a status file noticing that a branch moved
+under it, and saying so before explaining it, is the behaviour that keeps the
+file trustworthy.
 
 ```bash
 git fetch plutobet
-git log --oneline 299d4b9..plutobet/main    # what is on that main and not here
-git diff 299d4b9 plutobet/main --stat
+git log --oneline origin/main..plutobet/main   # what main carries and origin does not
 ```
-
-Whether that commit should be merged, and in which direction, is an owner
-decision. It is recorded here because a status file that says two branches match
-when they do not is the exact failure this document is meant to stop.
 
 ```bash
 # What is local only. Run this first; it is the list being published.
