@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { DEMO_ADMIN, signIn } from "./support";
 
-import { createAccount, createEvent, reviewKey } from "./review";
+import { createAccount, createEvent, invariants, reviewKey } from "./review";
+import { resolveAccount } from "./banking";
 
 /**
  * INTERNAL_SECURITY_VERIFICATION — the second half.
@@ -41,6 +42,9 @@ test.describe("internal security verification — extended", () => {
   test("a state-changing request from another origin is refused", async ({ page, request }) => {
     const account = await createAccount(request, { label: "csrf", fundMinor: "1000000" });
     await signIn(page, account);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
 
     /*
      * THE TWO HALVES OF CSRF PROTECTION, TESTED SEPARATELY.
@@ -78,21 +82,67 @@ test.describe("internal security verification — extended", () => {
      * here because this is the same browser — which is the pessimistic case,
      * and the one where an Origin check is the last line rather than the first.
      */
-    const foreignOrigin = await page.request.post("/api/withdrawals", {
-      data: {
-        amountMinor: "100000",
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
-        idempotencyKey: `csrf-${Date.now()}`,
-      },
-      headers: { origin: "https://evil.example.com" },
-      failOnStatusCode: false,
-    });
+    const balanceBefore = await page.request.get("/api/wallet").then((r) => r.text());
+
+    /*
+     * THREE HOSTILE SHAPES, NOT ONE.
+     *
+     * A foreign `Origin` was the only one this test used to try, and it was the
+     * only one the guard checked. The live probe that drove this pass posted
+     * the other two against the running server and was answered **201** by both:
+     *
+     *   - `Sec-Fetch-Site: cross-site` with no Origin at all. The browser
+     *     itself declaring the request came from somebody else's page — a
+     *     header page script cannot forge — and the server took the money.
+     *   - A hostile `Referer` with the Origin stripped. Referer was not read.
+     *
+     * Each is asserted separately, because a loop reporting one failure would
+     * not say which shape got through.
+     */
+    const hostile: { label: string; headers: Record<string, string> }[] = [
+      { label: "foreign Origin", headers: { origin: "https://evil.example.com" } },
+      { label: "cross-site fetch metadata", headers: { "sec-fetch-site": "cross-site" } },
+      { label: "hostile Referer, no Origin", headers: { referer: "https://evil.example.com/x" } },
+    ];
+
+    const statuses: string[] = [];
+    for (const attempt of hostile) {
+      const response = await page.request.post("/api/withdrawals", {
+        data: {
+          amountMinor: "100000",
+          bankCode: payTo.bankCode,
+          accountNumber: payTo.accountNumber,
+          confirmedAccountName: payTo.accountName,
+          idempotencyKey: `csrf-${attempt.label}-${Date.now()}`,
+        },
+        headers: attempt.headers,
+        failOnStatusCode: false,
+      });
+      expect(
+        response.status(),
+        `a withdrawal was accepted from a request with ${attempt.label}`,
+      ).toBe(403);
+      statuses.push(`${attempt.label}=${response.status()}`);
+    }
+
+    /*
+     * A REFUSAL THAT LEFT A HOLD BEHIND WOULD STILL BE A ROBBERY.
+     *
+     * Returning 403 is not the property that matters — not moving the money is.
+     * The guard runs before the handler, so nothing should have been written,
+     * and this is what proves it rather than assuming it from the ordering.
+     */
+    const balanceAfter = await page.request.get("/api/wallet").then((r) => r.text());
     expect(
-      foreignOrigin.status(),
-      "a withdrawal was accepted from a request declaring a foreign origin",
-    ).toBeGreaterThanOrEqual(400);
+      balanceAfter,
+      "a refused cross-origin withdrawal still changed the customer's balance",
+    ).toBe(balanceBefore);
+
+    const report = await invariants(request);
+    expect(
+      report.violations,
+      `a refused cross-origin withdrawal broke a money invariant: ${report.violations.join(", ")}`,
+    ).toEqual([]);
 
     record(test.info().project.name, {
       page: "any",
@@ -100,10 +150,12 @@ test.describe("internal security verification — extended", () => {
       control: "CSRF on state-changing routes",
       action:
         "read the session cookie's SameSite and httpOnly flags, posted credentials with a foreign " +
-        "Origin and no CSRF token, and posted a withdrawal with a foreign Origin",
+        "Origin and no CSRF token, then posted a withdrawal three ways: foreign Origin, " +
+        "cross-site fetch metadata, and a hostile Referer with no Origin",
       observed:
         `cookie is SameSite=${session.sameSite}, httpOnly=${session.httpOnly}; the credentials ` +
-        `callback returned no session material; the withdrawal answered ${foreignOrigin.status()}`,
+        `callback returned no session material; all three hostile withdrawal shapes were refused ` +
+        `(${statuses.join(", ")}) and the balance and every money invariant were unchanged`,
       route: "POST /api/auth/callback/credentials · POST /api/withdrawals",
     });
   });
@@ -533,13 +585,16 @@ test.describe("internal security verification — extended", () => {
     });
     const event = await createEvent(request, { label: "Idem" });
     await signIn(page, account);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
 
     // WITHDRAWAL: same key, different amount.
     const key = `idem-wd-${Date.now()}`;
     const base = {
-      bankCode: "058",
-      accountNumber: "0123456789",
-      accountName: "Review Tester",
+      bankCode: payTo.bankCode,
+      accountNumber: payTo.accountNumber,
+      confirmedAccountName: payTo.accountName,
       idempotencyKey: key,
     };
     const original = await page.request.post("/api/withdrawals", {
@@ -791,6 +846,9 @@ test.describe("internal security verification — extended", () => {
     });
     const event = await createEvent(request, { label: "NoDob" });
     await signIn(page, account);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
 
     const bet = await page.request.post("/api/bets", {
       data: {
@@ -805,9 +863,9 @@ test.describe("internal security verification — extended", () => {
     const withdrawal = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: "1000000",
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `nodob-wd-${Date.now()}`,
       },
       failOnStatusCode: false,

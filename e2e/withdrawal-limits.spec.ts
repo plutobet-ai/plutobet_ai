@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { signIn } from "./support";
 import { createAccount } from "./review";
+import { resolveAccount } from "./banking";
 
 /**
  * The two refusals that decide whether money can leave: the KYC tier, and the
@@ -30,6 +31,9 @@ test.describe("withdrawal limits", () => {
     });
 
     await signIn(page, account);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
     await page.goto("/withdraw", { waitUntil: "domcontentloaded" });
 
     /*
@@ -40,9 +44,9 @@ test.describe("withdrawal limits", () => {
     const refused = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: "1000000",
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `tier0-${Date.now()}`,
       },
       failOnStatusCode: false,
@@ -82,15 +86,18 @@ test.describe("withdrawal limits", () => {
     });
 
     await signIn(page, account);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
     await page.goto("/withdraw", { waitUntil: "domcontentloaded" });
 
     // ------------------------------------------------- over the cap, in one go
     const over = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: (TIER_1_CAP_MINOR + 100_00n).toString(),
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `tier1-over-${Date.now()}`,
       },
       failOnStatusCode: false,
@@ -109,9 +116,9 @@ test.describe("withdrawal limits", () => {
     const first = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: "4000000", // ₦40,000
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `tier1-ok-${Date.now()}`,
       },
       failOnStatusCode: false,
@@ -131,9 +138,9 @@ test.describe("withdrawal limits", () => {
     const second = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: "2000000", // ₦20,000
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `tier1-second-${Date.now()}`,
       },
       failOnStatusCode: false,

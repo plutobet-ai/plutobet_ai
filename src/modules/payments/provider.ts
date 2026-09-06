@@ -42,6 +42,39 @@ export interface BankOption {
   slug?: string;
 }
 
+/**
+ * The provider's answer to "whose account is this?".
+ *
+ * `accountName` is THE PROVIDER'S, never the customer's. The withdrawal form
+ * shows it read-only and the withdrawal route re-resolves rather than trusting
+ * what came back in the request body: an account name posted by a browser is a
+ * claim, and this is the only thing that turns it into a fact.
+ *
+ * `sandbox` marks an answer that came from the development adapter, so nothing
+ * downstream can mistake "Sandbox — NOT REAL" for a verified identity. It is on
+ * the type rather than left to a name-matching heuristic, because a caller
+ * deciding by string content is a caller that will eventually decide wrong.
+ */
+export interface ResolvedBankAccount {
+  accountNumber: string;
+  bankCode: string;
+  /** Exactly as the provider returned it. Never normalised or title-cased. */
+  accountName: string;
+  /** True when this came from the sandbox adapter and verifies nothing. */
+  sandbox: boolean;
+}
+
+/** The provider could not name an account for that bank and number. */
+export class AccountResolutionError extends Error {
+  constructor(
+    readonly reason: "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "NOT_CONFIGURED",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AccountResolutionError";
+  }
+}
+
 export interface VirtualAccountDetails {
   providerRef: string;
   accountNumber: string;
@@ -91,6 +124,28 @@ export interface PaymentProvider {
    * The caller caches the result. Implementations should not.
    */
   listBanks(): Promise<BankOption[]>;
+
+  /**
+   * Asks the provider who owns a bank account, before any money is held.
+   *
+   * WHY THIS IS ON THE INTERFACE AND NOT IN A ROUTE. A withdrawal used to carry
+   * an `accountName` typed by the browser, and nothing checked it: the customer
+   * could enter any name and the transfer was created with it. The number and
+   * the code decide where the money lands, so a wrong name did not misdirect
+   * funds — but it destroyed the one signal that the customer had entered
+   * somebody else's account by mistake, and it meant the name on the payout
+   * record was whatever had been typed.
+   *
+   * THROWS `AccountResolutionError` rather than returning null, so a caller
+   * cannot treat "we could not check" as "it is fine". The three reasons are
+   * distinguishable because they need different answers: NOT_FOUND is the
+   * customer's typo, PROVIDER_UNAVAILABLE is ours to retry, and NOT_CONFIGURED
+   * means no credential exists and nothing can be verified at all.
+   */
+  resolveBankAccount(params: {
+    bankCode: string;
+    accountNumber: string;
+  }): Promise<ResolvedBankAccount>;
 }
 
 export class WebhookSignatureError extends Error {

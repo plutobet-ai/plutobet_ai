@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { DEMO_ADMIN, signIn } from "./support";
 import { createAccount, invariants } from "./review";
+import { resolveAccount } from "./banking";
 
 /**
  * A sensitive administrative action, performed successfully — and refused
@@ -39,12 +40,15 @@ test.describe("sensitive admin actions", () => {
     });
 
     await signIn(page, customer);
+    // The provider's own answer for this account. A withdrawal will accept no
+    // other name, so the test asks the same way the form does.
+    const payTo = await resolveAccount(page.request);
     const requested = await page.request.post("/api/withdrawals", {
       data: {
         amountMinor: "3000000", // ₦30,000, inside the tier-2 daily cap
-        bankCode: "058",
-        accountNumber: "0123456789",
-        accountName: "Review Tester",
+        bankCode: payTo.bankCode,
+        accountNumber: payTo.accountNumber,
+        confirmedAccountName: payTo.accountName,
         idempotencyKey: `payout-${Date.now()}`,
       },
       failOnStatusCode: false,

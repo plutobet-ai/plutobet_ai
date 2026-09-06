@@ -3,9 +3,11 @@ import type {
   BankOption,
   DepositWebhookEvent,
   PaymentProvider,
+  ResolvedBankAccount,
   TransferResult,
   VirtualAccountDetails,
 } from "./provider";
+import { AccountResolutionError } from "./provider";
 
 /**
  * ⚠️ DEVELOPMENT PROVIDER — MOVES NO REAL MONEY. ⚠️
@@ -85,6 +87,53 @@ export class SandboxPaymentProvider implements PaymentProvider {
       { code: "000000", name: "Sandbox Bank — NOT REAL", slug: "sandbox-bank" },
       { code: "000001", name: "Sandbox Microfinance — NOT REAL", slug: "sandbox-mfb" },
     ];
+  }
+
+  /**
+   * A NAME THAT CANNOT BE MISTAKEN FOR A VERIFIED ONE.
+   *
+   * It says NOT REAL, in capitals, in the string a customer would see and in
+   * the string that would land on a payout record. That is deliberate and it is
+   * the same reasoning as the bank list above: a development adapter that
+   * returned "Joshua Madubueze" would be indistinguishable from a real
+   * verification, and somebody would eventually ship against it and believe an
+   * account had been checked when nothing had.
+   *
+   * `sandbox: true` is the machine-readable half. Nothing downstream should
+   * have to inspect the name to work out whether anything was verified — a
+   * caller that decides by string content is one that will eventually decide
+   * wrong.
+   *
+   * It still REFUSES an unknown bank code, so the sandbox exercises the
+   * not-found path rather than answering yes to everything. A stub that always
+   * succeeds tests only the happy path, and the happy path is not where
+   * withdrawals go wrong.
+   */
+  async resolveBankAccount(params: {
+    bankCode: string;
+    accountNumber: string;
+  }): Promise<ResolvedBankAccount> {
+    const known = await this.listBanks();
+    if (!known.some((bank) => bank.code === params.bankCode)) {
+      throw new AccountResolutionError(
+        "NOT_FOUND",
+        "we could not find an account with that number at that bank",
+      );
+    }
+    // One reserved number that always fails, so the refusal path is reachable
+    // from a browser without needing a provider to be down.
+    if (params.accountNumber === "0000000000") {
+      throw new AccountResolutionError(
+        "NOT_FOUND",
+        "we could not find an account with that number at that bank",
+      );
+    }
+    return {
+      accountNumber: params.accountNumber,
+      bankCode: params.bankCode,
+      accountName: `SANDBOX ACCOUNT ${params.accountNumber} — NOT REAL, NOT VERIFIED`,
+      sandbox: true,
+    };
   }
 
   async initiateTransfer(params: { reference: string }): Promise<TransferResult> {

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { signIn } from "./support";
-import { createAccount, waitForCode } from "./review";
+import { createAccount, isolatedClientHeaders, waitForCode } from "./review";
 
 /**
  * The three controls that decide who can get back into an account: resetting a
@@ -20,6 +20,10 @@ test.describe("password reset", () => {
     const account = await createAccount(request, { label: "reset" });
     const newPassword = "reset-by-browser-4413";
 
+        // Its own client address, so the one-time-code budget is not shared with
+    // every other test in the suite. See isolatedClientHeaders() for why this
+    // is realistic rather than a hole cut in a control.
+    await page.setExtraHTTPHeaders(isolatedClientHeaders());
     await page.goto("/forgot-password", { waitUntil: "domcontentloaded" });
     await page.locator("#reset-email").fill(account.email);
     await page.getByRole("button", { name: "Send reset code" }).click();

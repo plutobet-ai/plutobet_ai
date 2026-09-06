@@ -284,6 +284,13 @@ export const CONTROL_MANIFEST = [
   { page: "/wallet", control: "Wallet page", coverage: "browser" },
   { page: "/wallet", control: "Wallet buckets", coverage: "browser" },
   { page: "/withdraw", control: "Bank field", coverage: "browser" },
+  { page: "/withdraw", control: "Account name resolution", coverage: "browser" },
+  {
+    page: "/withdraw",
+    control: "Account name is never taken from the browser",
+    coverage: "browser",
+  },
+  { page: "/withdraw", control: "Account resolution refusals", coverage: "browser" },
   { page: "/withdraw", control: "Withdrawal minimum refused", coverage: "browser" },
   { page: "/withdraw", control: "Over-balance withdrawal refused", coverage: "browser" },
   { page: "/kyc", control: "KYC status", coverage: "browser" },

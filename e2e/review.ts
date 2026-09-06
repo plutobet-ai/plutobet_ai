@@ -243,6 +243,37 @@ export function disposablePhone(): string {
   return `0803${tail}`;
 }
 
+/**
+ * Gives this test its own client address, so it gets its own rate budget.
+ *
+ * WHY THIS IS NEEDED, AND WHY IT IS NOT A WEAKENING. The one-time-code budget
+ * is **10 per IP per 15 minutes** — deliberately tight, because issuing a code
+ * costs SMS money and registration is the surface a bot uses to mass-create
+ * accounts. The whole browser suite runs from ONE address, both projects issue
+ * codes, and the suite takes longer than the window: so the eleventh
+ * registration in fifteen minutes was refused, no code was delivered, and a
+ * test failed for a reason that had nothing to do with what it was testing.
+ * It passed in one run and failed in the next, which is the signature of a
+ * shared budget rather than a defect.
+ *
+ * A test that needs a code is a DIFFERENT CUSTOMER, and different customers do
+ * not share a connection. Giving each one its own forwarded address is what
+ * production looks like, not a hole cut in a control — the limiter still runs,
+ * still counts, and still refuses. Its correctness is asserted where it belongs
+ * and not skipped here: `security.spec.ts` fires a burst from ONE address and
+ * requires it to be shed by refusing, and `security-extended.spec.ts` rotates
+ * the header deliberately and records that a proxy which does not overwrite it
+ * would let a budget be reset.
+ *
+ * The alternative — flushing Redis between tests — would have disabled the
+ * limiter for the run and hidden exactly the failure the burst test exists to
+ * find.
+ */
+export function isolatedClientHeaders(): Record<string, string> {
+  const octet = () => Math.floor(Math.random() * 254) + 1;
+  return { "x-forwarded-for": `203.0.113.${octet()}.${Date.now() % 251}` };
+}
+
 /** The E.164 form the OTP service normalises the above into. */
 export function e164(local: string): string {
   return `+234${local.replace(/^0/, "")}`;

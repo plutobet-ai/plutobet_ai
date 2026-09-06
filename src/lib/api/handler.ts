@@ -169,7 +169,22 @@ export interface AuthedRouteContext extends RouteContext {
   userId: string;
 }
 
-/** Wraps a public route: rate limiting by IP, plus error mapping. */
+/**
+ * Wraps a public route: rate limiting by IP, plus error mapping.
+ *
+ * "Public" MEANS UNAUTHENTICATED, NOT UNPROTECTED. Two routes wrapped here —
+ * `/api/ai` and `/api/bookings` — call `getServerSession` and act on whoever
+ * the cookie says you are. They are public in the sense that a signed-out
+ * visitor may call them, and cookie-authenticated in the sense that a signed-in
+ * one gets more. That combination is precisely a CSRF target, and it had no
+ * origin check at all while every `authedRoute` did. `/api/ai` dispatches
+ * tools; a route that can be talked into acting for a logged-in customer is not
+ * one to leave outside the guard because of what it is named.
+ *
+ * The registration, OTP and password-reset routes wrapped here have no session
+ * to ride, so the check costs them nothing — a browser always sends the header
+ * and a server-to-server caller sends none, which is allowed.
+ */
 export function publicRoute(
   bucket: string,
   rule: RateLimitRule,
@@ -177,6 +192,7 @@ export function publicRoute(
 ) {
   return async (request: NextRequest): Promise<NextResponse> => {
     try {
+      assertSameOrigin(request);
       const ip = clientIp(request);
       const outcome = await rateLimiter.consume(bucket, ip, rule);
       if (!outcome.allowed) {
@@ -230,23 +246,60 @@ export function assertSameOrigin(request: NextRequest): void {
   const method = request.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
 
-  const declared = request.headers.get("origin");
+  const refuse = () => {
+    // One message for every route and every reason. Telling a caller WHICH
+    // signal convicted it is telling an attacker which one to strip next.
+    throw new ApiError(403, "CROSS_ORIGIN", "that request could not be verified");
+  };
+
+  /*
+   * SIGNAL 1 — FETCH METADATA, WHICH THE BROWSER SETS AND SCRIPT CANNOT.
+   *
+   * `Sec-Fetch-Site` is a forbidden header name: page script cannot set or
+   * forge it, and the browser states plainly what kind of request this is.
+   * `cross-site` is the browser saying "this came from somebody else's page",
+   * which is the exact thing being refused, so it is refused FIRST and on its
+   * own — it does not need `Origin` to agree, and waiting for `Origin` was the
+   * gap. A live probe posted `Sec-Fetch-Site: cross-site` to `/api/withdrawals`
+   * and was answered **201**: the browser had declared the attack and the
+   * server took the money anyway.
+   *
+   * `same-origin` and `same-site` pass. `none` is a user-initiated navigation —
+   * somebody typing the URL or opening a bookmark — and is not an attack.
+   * Absent passes too: native clients and server-to-server callers send none,
+   * and refusing them would break real traffic without stopping any browser.
+   */
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") refuse();
+
+  /*
+   * SIGNAL 2 — ORIGIN, then REFERER when Origin is absent.
+   *
+   * Browsers send `Origin` on every state-changing fetch. Some proxies and
+   * privacy tools strip it, and when they do `Referer` is usually still there
+   * — so falling back is what stops "no Origin" from being a way in. Referer
+   * is only consulted when Origin is missing, never to override it: it carries
+   * a full path and is the weaker signal.
+   *
+   * A live probe sent `Referer: https://evil.example.com/x` with no Origin and
+   * was answered **201**, because Referer was not read at all.
+   */
+  const declared = request.headers.get("origin") ?? request.headers.get("referer");
   if (!declared) return;
 
   let origin: URL;
   try {
     origin = new URL(declared);
   } catch {
-    throw new ApiError(403, "CROSS_ORIGIN", "that request could not be verified");
+    refuse();
+    return;
   }
 
   // The host the request actually arrived at, preferring the forwarded host a
   // proxy sets — comparing against a configured URL instead would fail on
   // every preview deployment.
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (host && origin.host !== host) {
-    throw new ApiError(403, "CROSS_ORIGIN", "that request could not be verified");
-  }
+  if (host && origin.host !== host) refuse();
 }
 
 export function authedRoute(

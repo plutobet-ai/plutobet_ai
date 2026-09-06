@@ -78,6 +78,18 @@ export const RATE_RULES = {
   wallet: { limit: 60, windowSeconds: 60 },
   withdrawal: { limit: 10, windowSeconds: 60 },
   /*
+   * Account resolution: tighter than browsing, looser than a withdrawal.
+   *
+   * It is a lookup, not a money movement, and a customer correcting a typo
+   * will legitimately call it several times — so it cannot be as tight as the
+   * withdrawal itself. But it is a PAID call to Paystack on every hit and, left
+   * open, it is an oracle: an attacker with a bank code could walk the NUBAN
+   * space and harvest account holders' names. Twenty a minute is generous for
+   * somebody typing their own account number and useless for enumerating a
+   * ten-digit space.
+   */
+  resolveAccount: { limit: 20, windowSeconds: 60 },
+  /*
    * Cash-out sits between browsing and placing. Quoting a price is cheap and a
    * customer watching a match will refresh it often; TAKING the offer is a
    * money movement priced under a row lock, so the budget is nearer placement

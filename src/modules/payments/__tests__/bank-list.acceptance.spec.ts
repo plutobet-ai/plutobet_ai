@@ -37,6 +37,12 @@ function providerReturning(banks: BankOption[] | Error): PaymentProvider {
     initiateTransfer: async () => {
       throw new Error("not used");
     },
+    // This suite is about the bank LIST cache. Resolution is a separate
+    // provider call with its own suite; throwing here means a test that
+    // reaches it by accident fails loudly rather than passing on a stub.
+    resolveBankAccount: async () => {
+      throw new Error("not used");
+    },
     listBanks: async () => {
       if (banks instanceof Error) throw banks;
       return banks;

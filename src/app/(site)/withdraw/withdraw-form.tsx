@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { naira, parseNairaToKobo } from "@/lib/money";
 
@@ -48,7 +48,35 @@ export function WithdrawForm(props: {
   const [bankListState, setBankListState] = useState<"loading" | "ready" | "stale" | "failed">(
     "loading",
   );
+  /*
+   * THE RESOLVED ACCOUNT — THE PROVIDER'S ANSWER, NOT A FIELD.
+   *
+   * `accountName` is no longer typed. It is what the bank says the account is
+   * called, fetched from `/api/payments/resolve-account`, shown read-only, and
+   * confirmed by an explicit tick before a withdrawal can be requested. The
+   * server re-resolves anyway and writes its own answer, so nothing here is
+   * authoritative — this exists so the customer SEES whose account they are
+   * about to pay.
+   */
   const [accountName, setAccountName] = useState("");
+  const [resolveState, setResolveState] = useState<
+    "idle" | "resolving" | "resolved" | "failed"
+  >("idle");
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [sandboxAccount, setSandboxAccount] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  /*
+   * STALE-RESPONSE PROTECTION.
+   *
+   * Two resolutions can be in flight when somebody corrects a digit, and they
+   * can come back in either order. Without this, the SLOWER answer for the OLD
+   * number wins and the customer confirms a name belonging to an account they
+   * are no longer paying. The counter is bumped on every request and every
+   * response checks it is still the newest before it is allowed to write
+   * anything. `useRef` rather than state: it must be readable synchronously
+   * inside the async callback, and a state update would not have landed yet.
+   */
+  const resolveSeq = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -101,6 +129,67 @@ export function WithdrawForm(props: {
             ? `Your daily limit at this verification level is ${naira(cap)}.`
             : null;
 
+  /*
+   * CLEAR THE MOMENT THE ACCOUNT CHANGES.
+   *
+   * Not debounced-and-replaced — CLEARED. A stale name sitting on screen beside
+   * a number the customer has just edited is the most dangerous state this form
+   * can be in, because it reads as confirmation of the NEW number. The
+   * confirmation tick goes with it: agreeing to pay one account is not agreeing
+   * to pay another.
+   *
+   * Called from the edit handlers rather than from an effect on
+   * `[accountNumber, bankCode]`. The effect version worked and `react-hooks`
+   * refused it — setting state synchronously in an effect body causes a
+   * cascading render — and the rule is right for a better reason than
+   * performance: clearing is a direct consequence of the customer editing the
+   * field, so it belongs where the edit happens. Deriving it from a dependency
+   * array puts a one-render window between the number changing and the name
+   * disappearing, which is exactly the window this is here to close.
+   *
+   * Bumping `resolveSeq` also orphans any resolution still in flight, so a
+   * slow answer for the old number cannot land afterwards.
+   */
+  function clearResolvedAccount() {
+    resolveSeq.current += 1;
+    setAccountName("");
+    setConfirmed(false);
+    setResolveError(null);
+    setSandboxAccount(false);
+    setResolveState("idle");
+  }
+
+  const resolveAccount = useCallback(async () => {
+    if (!/^\d{10}$/.test(accountNumber) || !bankCode) return;
+    const seq = resolveSeq.current + 1;
+    resolveSeq.current = seq;
+    setResolveState("resolving");
+    setResolveError(null);
+    try {
+      const response = await fetch("/api/payments/resolve-account", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ accountNumber, bankCode }),
+      });
+      const body = await response.json().catch(() => null);
+      // A response for an account the customer has already moved on from is
+      // discarded, not displayed.
+      if (seq !== resolveSeq.current) return;
+      if (!response.ok) {
+        setResolveState("failed");
+        setResolveError(body?.message ?? "We could not check that account.");
+        return;
+      }
+      setAccountName(String(body.accountName ?? ""));
+      setSandboxAccount(Boolean(body.sandbox));
+      setResolveState("resolved");
+    } catch {
+      if (seq !== resolveSeq.current) return;
+      setResolveState("failed");
+      setResolveError("We could not reach the bank directory. Try again.");
+    }
+  }, [accountNumber, bankCode]);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -114,7 +203,10 @@ export function WithdrawForm(props: {
           amountMinor: amountMinor.toString(),
           accountNumber,
           bankCode,
-          accountName,
+          // What the customer was SHOWN and agreed to. The server re-resolves
+          // and writes its own answer; this is sent so a screen that went stale
+          // between confirming and submitting is refused rather than paid.
+          confirmedAccountName: accountName,
           // Stable per submission, so a double-tap replays rather than
           // requesting a second payout.
           idempotencyKey: `withdrawal:${crypto.randomUUID()}`,
@@ -181,7 +273,10 @@ export function WithdrawForm(props: {
             maxLength={10}
             pattern="\d{10}"
             value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => {
+              setAccountNumber(e.target.value.replace(/\D/g, ""));
+              clearResolvedAccount();
+            }}
           />
           <span className="sb-hint">10 digits, NUBAN.</span>
         </label>
@@ -207,7 +302,10 @@ export function WithdrawForm(props: {
                 required
                 maxLength={6}
                 value={bankCode}
-                onChange={(e) => setBankCode(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => {
+                  setBankCode(e.target.value.replace(/\D/g, ""));
+                  clearResolvedAccount();
+                }}
               />
               <span className="sb-hint">
                 We could not load the bank list. Enter your bank&rsquo;s NIP code from your bank
@@ -221,7 +319,10 @@ export function WithdrawForm(props: {
                 className="sb-input"
                 required
                 value={bankCode}
-                onChange={(e) => setBankCode(e.target.value)}
+                onChange={(e) => {
+                  setBankCode(e.target.value);
+                  clearResolvedAccount();
+                }}
               >
                 <option value="">Choose your bank</option>
                 {banks!.map((bank) => (
@@ -240,19 +341,65 @@ export function WithdrawForm(props: {
           )}
         </label>
 
-        <label className="sb-field" htmlFor="wd-name">
+        {/*
+          THE ACCOUNT NAME IS NOT A FIELD ANY MORE.
+
+          It used to be a free-text input whose value went straight onto the
+          payout record. It is now the bank's answer: read-only, fetched on
+          demand, cleared the instant the number or bank changes, and confirmed
+          explicitly before a withdrawal can be requested.
+        */}
+        <div className="sb-field">
           <span className="sb-field__label">Account name</span>
-          <input
-            id="wd-name"
-            className="sb-input"
-            required
-            value={accountName}
-            onChange={(e) => setAccountName(e.target.value)}
-          />
+
+          <button
+            type="button"
+            className="sb-btn sb-btn--ghost"
+            onClick={resolveAccount}
+            disabled={!/^\d{10}$/.test(accountNumber) || !bankCode || resolveState === "resolving"}
+          >
+            {resolveState === "resolving" ? "Checking…" : "Check account name"}
+          </button>
+
+          {resolveState === "resolved" && accountName ? (
+            <>
+              <output
+                id="wd-name"
+                className="sb-input"
+                style={{ display: "block", fontWeight: 700 }}
+              >
+                {accountName}
+              </output>
+              {sandboxAccount ? (
+                <span className="sb-note sb-note--warn" role="status">
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  This is a SANDBOX response. No real account was checked.
+                </span>
+              ) : null}
+              <label className="sb-check" htmlFor="wd-confirm">
+                <input
+                  id="wd-confirm"
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                />
+                <span>This is the account I want to be paid into.</span>
+              </label>
+            </>
+          ) : null}
+
+          {resolveState === "failed" && resolveError ? (
+            <span className="sb-note sb-note--error" role="alert">
+              <AlertTriangle size={14} aria-hidden="true" />
+              {resolveError}
+            </span>
+          ) : null}
+
           <span className="sb-hint">
-            Must match your own name — third-party payouts are refused.
+            We ask your bank who owns this account. Must be your own — third-party
+            payouts are refused.
           </span>
-        </label>
+        </div>
 
         {problem ? (
           <p id="wd-problem" className="sb-note sb-note--error" role="alert">
@@ -264,7 +411,17 @@ export function WithdrawForm(props: {
         <button
           type="submit"
           className="sb-btn sb-btn--primary sb-btn--lg"
-          disabled={busy || amountMinor === 0n || problem !== null}
+          disabled={
+            busy ||
+            amountMinor === 0n ||
+            problem !== null ||
+            // No payout without a name from the bank AND an explicit agreement
+            // to it. The server enforces this too; this stops the customer
+            // reaching a refusal they cannot interpret.
+            resolveState !== "resolved" ||
+            !accountName ||
+            !confirmed
+          }
         >
           {busy ? (
             <>

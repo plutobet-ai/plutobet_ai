@@ -765,6 +765,10 @@ const FINISHED_SUBJECTS = [
   { in: /prompt-?injection corpus/i, evidence: "§0 stage 5i records 53 attacks and 59 tests" },
   { in: /retire the legacy bridge/i, evidence: "the file is deleted from the repository" },
   { in: /legacy[- ]style removal/i, evidence: "the legacy bridge stylesheet is deleted" },
+  {
+    in: /bank[- ]account resolution|resolveBankAccount|account[- ]name resolution/i,
+    evidence: "§11 records the provider call, the route, the read-only field and its tests",
+  },
 ];
 
 const UNFINISHED_WORDS =
@@ -794,6 +798,104 @@ function checkFinishedNotCalledUnfinished() {
   }
 }
 
+// ------------------------- 14. an attack that was accepted, inside a pass
+
+/**
+ * A security result may not say an attack SUCCEEDED and still stand as evidence.
+ *
+ * THE FAILURE THIS CATCHES, EXACTLY. The CSRF row in the security matrix read:
+ * "a withdrawal posted with Origin: https://evil.example.com. The last one was
+ * accepted with 201 -- finding 51". That sentence sat inside a table headed by
+ * a claim that the internal security verification passes, and it stayed there
+ * for a whole pass after the guard had been written. A reader skimming the
+ * matrix saw a security section; a reader of that one cell saw an accepted
+ * attack. Both readings came from the same table.
+ *
+ * The rule is narrow on purpose. It fires only where an acceptance verb sits
+ * beside a success status on a line that also names an attack, and it does NOT
+ * fire on a line saying the attempt was refused or dating itself as history.
+ * Recording what a defect USED to do is exactly what this document is for; the
+ * requirement is only that it cannot be the CURRENT result.
+ */
+const ACCEPTED_ATTACK =
+  /\b(?:accepted|succeeded|allowed|went through|got through)\b[^.]{0,60}?\b(?:20[01])\b/i;
+
+const SAYS_IT_WAS_REFUSED =
+  /\brefused\b|\brejected\b|\bblocked\b|\b40[13]\b|\bno longer\b|\bused to\b|\bpreviously\b|\bwas then\b|\bat the time\b|\bhas since\b|\bnow answers\b|\bFIXED\b|\bfixed\b/i;
+
+function checkNoAcceptedAttackInSecurityMatrix() {
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      if (!ACCEPTED_ATTACK.test(text)) return;
+      // Only lines that are about an attack at all.
+      if (
+        !/attack|hostile|forged|origin|csrf|xss|injection|bypass|spoof|replay|traversal/i.test(text)
+      ) {
+        return;
+      }
+      if (SAYS_IT_WAS_REFUSED.test(text)) return;
+      report(
+        rel,
+        i + 1,
+        "accepted-attack",
+        "a security result records an attack as accepted without saying it was fixed",
+      );
+    });
+  }
+}
+
+// ------------------------------------------- 15. the unit-suite total
+
+/**
+ * Every stated Vitest total must agree with every other one.
+ *
+ * THE FAILURE THIS CATCHES. The browser total had a rule and the unit total did
+ * not, so the same staleness simply moved: three separate sentences said
+ * "unchanged at 989", "moved from 975 to 989" and "test count is 989" while the
+ * gate table said something else entirely. Each was true when written. None was
+ * true together, and a reader had four numbers and no way to choose.
+ *
+ * There is no machine-readable Vitest report committed here to compare against
+ * — the CI job writes one, local runs do not — so this enforces INTERNAL
+ * agreement, which is the property that was actually broken. Historical figures
+ * are exempt on the same terms as everywhere else: say so on the same line.
+ */
+function checkUnitTotals() {
+  const stated = [];
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      if (HISTORICAL_MARKER.test(text)) return;
+      /*
+       * Only a figure tied to the unit suite: "vitest ... N passed", or a
+       * "test count"/"unit total" phrasing. A bare "N passed" is not enough —
+       * the browser rows say that too, and claiming them here would report a
+       * conflict between two different suites.
+       */
+      const m =
+        /vitest[^|]*?(\d[\d,]{2,})\s+passed/i.exec(text) ??
+        /(?:test count|unit total|vitest total)\D{0,24}?(\d[\d,]{2,})/i.exec(text);
+      if (!m) return;
+      stated.push({ rel, line: i + 1, count: Number(m[1].replace(/,/g, "")) });
+    });
+  }
+
+  const distinct = [...new Set(stated.map((x) => x.count))];
+  if (distinct.length > 1) {
+    for (const x of stated) {
+      report(
+        x.rel,
+        x.line,
+        "unit-totals",
+        `unit-test total ${x.count} disagrees with other statements (${distinct.join(", ")})`,
+      );
+    }
+  }
+}
+
 // ------------------------------------------------------------------- run them
 
 checkMigrationTotals();
@@ -809,12 +911,14 @@ checkBrowserTotals();
 checkInteractionTotals();
 checkRepeatedSentences();
 checkFinishedNotCalledUnfinished();
+checkNoAcceptedAttackInSecurityMatrix();
+checkUnitTotals();
 
 const byRule = new Map();
 for (const f of findings) byRule.set(f.rule, (byRule.get(f.rule) ?? 0) + 1);
 
 if (findings.length === 0) {
-  console.info(`check-docs: clean — ${docFiles().length} document(s), 13 rules`);
+  console.info(`check-docs: clean — ${docFiles().length} document(s), 15 rules`);
   process.exit(0);
 }
 

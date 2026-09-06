@@ -2,7 +2,14 @@ import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { fillControlled, signIn } from "./support";
 import { backFirstPrice, placeFromSlip, startFreshSlip } from "./betting";
-import { createAccount, createEvent, disposablePhone, e164, waitForCode } from "./review";
+import {
+  createAccount,
+  createEvent,
+  disposablePhone,
+  e164,
+  isolatedClientHeaders,
+  waitForCode,
+} from "./review";
 
 /**
  * Cool-off and self-exclusion, taken for real, on accounts created for the
@@ -252,6 +259,10 @@ test.describe("safer gambling, taken for real", () => {
     const phone = disposablePhone();
     const email = `postexclusion-${Date.now().toString(36)}@review.local`;
 
+        // Its own client address, so the one-time-code budget is not shared with
+    // every other test in the suite. See isolatedClientHeaders() for why this
+    // is realistic rather than a hole cut in a control.
+    await page.setExtraHTTPHeaders(isolatedClientHeaders());
     await page.goto("/register", { waitUntil: "domcontentloaded" });
     await page.locator("#reg-email").fill(email);
     await page.locator("#reg-phone").fill(phone);

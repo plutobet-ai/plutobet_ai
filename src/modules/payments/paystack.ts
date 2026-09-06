@@ -2,10 +2,15 @@ import type {
   BankOption,
   DepositWebhookEvent,
   PaymentProvider,
+  ResolvedBankAccount,
   TransferResult,
   VirtualAccountDetails,
 } from "./provider";
-import { verifyPaystackSignature, WebhookSignatureError } from "./provider";
+import {
+  AccountResolutionError,
+  verifyPaystackSignature,
+  WebhookSignatureError,
+} from "./provider";
 
 /**
  * Paystack adapter.
@@ -246,6 +251,77 @@ export class PaystackProvider implements PaymentProvider {
     }
 
     return banks;
+  }
+
+  /**
+   * `GET /bank/resolve` — Paystack's own account-name lookup.
+   *
+   * THE SECRET KEY NEVER LEAVES THE SERVER. `call()` attaches it as a bearer
+   * token from `process.env`; this module is imported only by server code, and
+   * the route in front of it returns the NAME and nothing else. No part of the
+   * response, and no part of the credential, is handed to the browser.
+   *
+   * PAYSTACK ANSWERS A WRONG NUMBER WITH 4xx, NOT AN EMPTY BODY. A NUBAN that
+   * belongs to nobody, or does not match the bank, comes back as an error
+   * envelope — so the mapping below turns a 4xx into NOT_FOUND, which is the
+   * customer's problem to fix, and leaves 5xx and network faults as
+   * PROVIDER_UNAVAILABLE, which is ours. Collapsing the two would either blame
+   * the customer for an outage or invite them to retry a typo forever.
+   *
+   * THE NAME IS RETURNED EXACTLY AS GIVEN. Not trimmed to a canonical form, not
+   * title-cased, not reordered. It is shown to the customer so they can
+   * recognise their own account, and every transformation is a chance to make
+   * two different accounts look like the same one.
+   */
+  async resolveBankAccount(params: {
+    bankCode: string;
+    accountNumber: string;
+  }): Promise<ResolvedBankAccount> {
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      throw new AccountResolutionError(
+        "NOT_CONFIGURED",
+        "no payment provider credential is configured, so no account can be verified",
+      );
+    }
+
+    let data: { account_number?: string; account_name?: string };
+    try {
+      data = await call<{ account_number?: string; account_name?: string }>(
+        `/bank/resolve?account_number=${encodeURIComponent(params.accountNumber)}` +
+          `&bank_code=${encodeURIComponent(params.bankCode)}`,
+        { method: "GET" },
+      );
+    } catch (error) {
+      if (error instanceof PaystackError) {
+        // 4xx is "no such account at that bank". Anything else is the provider
+        // or the network, and the customer can do nothing about it.
+        const theirs = error.status >= 400 && error.status < 500;
+        throw new AccountResolutionError(
+          theirs ? "NOT_FOUND" : "PROVIDER_UNAVAILABLE",
+          theirs
+            ? "we could not find an account with that number at that bank"
+            : "we could not reach the bank directory just now",
+        );
+      }
+      throw error;
+    }
+
+    const accountName = typeof data.account_name === "string" ? data.account_name.trim() : "";
+    if (!accountName) {
+      // A 200 with no name is not a verified account. Treating it as one would
+      // put an empty string on a payout record and call it checked.
+      throw new AccountResolutionError(
+        "NOT_FOUND",
+        "we could not find an account with that number at that bank",
+      );
+    }
+
+    return {
+      accountNumber: params.accountNumber,
+      bankCode: params.bankCode,
+      accountName,
+      sandbox: false,
+    };
   }
 
   async initiateTransfer(params: {

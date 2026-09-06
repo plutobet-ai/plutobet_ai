@@ -1,6 +1,6 @@
 import { redis } from "@/db/redis";
 import type { BankOption, PaymentProvider } from "./provider";
-import { paymentProvider } from "./factory";
+import { paymentProviderForReads } from "./factory";
 
 /**
  * The list of banks a withdrawal can be paid to.
@@ -58,7 +58,14 @@ interface CachedList {
 }
 
 export class BankListService {
-  constructor(private readonly provider: () => PaymentProvider = paymentProvider) {}
+  /*
+   * READ-ONLY provider access. Fetching the bank list verifies no signature and
+   * moves no money, so on a review server it may answer from the sandbox — two
+   * banks named "NOT REAL". Before this the production-build refusal threw on
+   * every fetch, the log said "bank list unavailable", and the picker was
+   * empty on a screen whose whole purpose is to stop somebody typing a code.
+   */
+  constructor(private readonly provider: () => PaymentProvider = paymentProviderForReads) {}
 
   async list(): Promise<BankListResult> {
     const cached = await this.readCache();

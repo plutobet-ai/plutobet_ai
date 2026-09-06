@@ -1,7 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { record, viewportName } from "./audit";
 import { expectNoProblems, fillControlled, watchForProblems } from "./support";
-import { createAccount, disposablePhone, e164, waitForCode } from "./review";
+import {
+  createAccount,
+  disposablePhone,
+  e164,
+  isolatedClientHeaders,
+  waitForCode,
+} from "./review";
 
 /**
  * Registration, completed in a browser, from an empty form to a signed-in
@@ -32,6 +38,10 @@ test.describe("registration", () => {
     const email = `reg-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}@review.local`;
     const password = "browser-registration-9781";
 
+        // Its own client address, so the one-time-code budget is not shared with
+    // every other test in the suite. See isolatedClientHeaders() for why this
+    // is realistic rather than a hole cut in a control.
+    await page.setExtraHTTPHeaders(isolatedClientHeaders());
     await page.goto("/register", { waitUntil: "domcontentloaded" });
 
     await page.locator("#reg-email").fill(email);
@@ -113,6 +123,10 @@ test.describe("registration", () => {
 
   test("change details returns to step one and clears the code", async ({ page }) => {
     const phone = disposablePhone();
+        // Its own client address, so the one-time-code budget is not shared with
+    // every other test in the suite. See isolatedClientHeaders() for why this
+    // is realistic rather than a hole cut in a control.
+    await page.setExtraHTTPHeaders(isolatedClientHeaders());
     await page.goto("/register", { waitUntil: "domcontentloaded" });
 
     await page.locator("#reg-email").fill(`change-${Date.now().toString(36)}@review.local`);
@@ -157,6 +171,10 @@ test.describe("registration", () => {
     const existing = await createAccount(request, { label: "dupe" });
     const phone = disposablePhone();
 
+        // Its own client address, so the one-time-code budget is not shared with
+    // every other test in the suite. See isolatedClientHeaders() for why this
+    // is realistic rather than a hole cut in a control.
+    await page.setExtraHTTPHeaders(isolatedClientHeaders());
     await page.goto("/register", { waitUntil: "domcontentloaded" });
     await page.locator("#reg-email").fill(existing.email);
     await page.locator("#reg-phone").fill(phone);
