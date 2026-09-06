@@ -923,6 +923,33 @@ ever**; `Madubuezejoshua/plutobet` has created **30**, by `vercel[bot]`, one per
 push. The two remotes are not interchangeable and the difference is a
 production deployment.
 
+**`plutobet/main` HAS MOVED, AND NOT FROM THIS MACHINE.** Read on 2026-09-06:
+
+| ref | commit |
+|---|---|
+| local `main` | `299d4b9` |
+| `origin/main` | `299d4b9` — agrees |
+| **`plutobet/main`** | **a different commit, and one this clone does not have** — `git cat-file -t` cannot resolve it |
+
+An earlier version of this file told the reader to expect `299d4b9` on both
+remotes. That is now false for `plutobet`, so the instruction has been removed
+rather than left to mislead. **Nothing in this pass pushed `main` anywhere** —
+the two remotes' `main` branches genuinely disagree, and the newer commit came
+from somewhere else.
+
+**Do not reconcile them by guessing.** Fetch it and look before deciding
+anything:
+
+```bash
+git fetch plutobet
+git log --oneline 299d4b9..plutobet/main    # what is on that main and not here
+git diff 299d4b9 plutobet/main --stat
+```
+
+Whether that commit should be merged, and in which direction, is an owner
+decision. It is recorded here because a status file that says two branches match
+when they do not is the exact failure this document is meant to stop.
+
 ```bash
 # What is local only. Run this first; it is the list being published.
 git log --oneline plutobet/finish/developer-verification-and-truth..HEAD
@@ -930,10 +957,10 @@ git log --oneline plutobet/finish/developer-verification-and-truth..HEAD
 # SAFE: publishes the branch to the remote that has never created a deployment.
 git push plutobet finish/developer-verification-and-truth
 
-# Verify it landed, and that main did not move.
+# Verify it landed, and see where each main actually is.
 git ls-remote plutobet refs/heads/finish/developer-verification-and-truth
-git ls-remote plutobet refs/heads/main      # expect 299d4b9
-git ls-remote origin  refs/heads/main       # expect 299d4b9
+git ls-remote plutobet refs/heads/main
+git ls-remote origin  refs/heads/main       # local main and origin/main agree
 ```
 
 **Do not run either of these without deciding about a deployment first:**
