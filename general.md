@@ -912,8 +912,16 @@ named in §23 and in the owner-decision table.
 
 ### Exactly what is published, and the exact commands to publish the rest
 
-**Nothing in this pass was pushed and nothing was deployed.** The branch on
-`plutobet` is six commits behind this working tree.
+**Nothing in this pass was pushed and nothing was deployed.** Six commits of
+this branch are on `plutobet`; the gap-closure commit on top of them is **local
+only**. Read the exact list rather than trusting a number here — the command is
+the first one below, and it is correct on any day.
+
+**Push it to `plutobet`, not to `origin`.** Checked again on 2026-09-06 against
+the deployments API: `plutobet-ai/plutobet_ai` has created **0 deployments,
+ever**; `Madubuezejoshua/plutobet` has created **30**, by `vercel[bot]`, one per
+push. The two remotes are not interchangeable and the difference is a
+production deployment.
 
 ```bash
 # What is local only. Run this first; it is the list being published.
