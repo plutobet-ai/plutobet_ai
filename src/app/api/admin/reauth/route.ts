@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
-import { clientIp } from "@/lib/api/handler";
+import { assertSameOrigin, clientIp } from "@/lib/api/handler";
 import { rateLimiter, RATE_RULES } from "@/lib/api/rate-limit";
 import { authOptions } from "@/modules/auth/auth-options";
 import { AdminRequiredError, requireAdminIdentity } from "@/modules/admin/guard";
@@ -21,6 +21,9 @@ const bodySchema = z.object({ password: z.string().min(1).max(200) });
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    // This endpoint MINTS the step-up proof, so it is the one a cross-origin
+    // caller would most want. Same second layer as every other money route.
+    assertSameOrigin(request);
     const body = bodySchema.parse(await request.json());
     const identity = await requireAdminIdentity();
     const session = await getServerSession(authOptions);

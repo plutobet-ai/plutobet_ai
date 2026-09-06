@@ -12,6 +12,11 @@ import {
   type SmsProvider,
 } from "./provider";
 import { ResendEmailProvider } from "./resend";
+import {
+  ReviewMailboxEmailProvider,
+  ReviewMailboxSmsProvider,
+  reviewMailboxEnabled,
+} from "./review-mailbox";
 import { TermiiSmsProvider } from "./termii";
 
 /**
@@ -130,6 +135,17 @@ export function otpDeliveryAvailable(channel: OtpChannel): boolean {
     channel === "SMS"
       ? Boolean(process.env.TERMII_API_KEY && process.env.TERMII_SENDER_ID)
       : Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+  /*
+   * A REVIEW SERVER CAN DELIVER, AND THAT IS NOT A LOOSENING.
+   *
+   * The review mailbox is a real delivery path: the message leaves the service
+   * and lands somewhere the requester cannot see, which is the only property
+   * that makes a one-time code worth anything at all. Reading it back requires
+   * `/api/qa/mailbox`, which refuses under exactly the same four conditions
+   * this does. What the console fallback did — hand the code straight back to
+   * whoever asked for it — the mailbox never does.
+   */
+  if (reviewMailboxEnabled()) return true;
   // Outside production the console fallback is a legitimate delivery path.
   return configured || process.env.NODE_ENV !== "production";
 }
@@ -440,6 +456,24 @@ export class OtpService {
 export function createOtpService(): OtpService {
   const hasSms = Boolean(process.env.TERMII_API_KEY && process.env.TERMII_SENDER_ID);
   const hasEmail = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+
+  /*
+   * THE REVIEW MAILBOX COMES FIRST, AND IT CANNOT COEXIST WITH A REAL VENDOR.
+   *
+   * `reviewMailboxEnabled()` is false whenever TERMII_API_KEY, RESEND_API_KEY
+   * or any other live credential is present — that is one of its four
+   * conditions, not a convention observed here. So this branch and the two
+   * below are mutually exclusive BY CONSTRUCTION rather than by ordering, and
+   * reordering them could not route a test message through a real vendor.
+   */
+  if (reviewMailboxEnabled()) {
+    return new OtpService(
+      walletService,
+      new ReviewMailboxSmsProvider(),
+      new ReviewMailboxEmailProvider(),
+    );
+  }
+
   const sms: SmsProvider = hasSms
     ? new TermiiSmsProvider(process.env.TERMII_API_KEY!, process.env.TERMII_SENDER_ID!)
     : new ConsoleSmsProvider();

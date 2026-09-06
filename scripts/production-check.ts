@@ -218,6 +218,18 @@ async function connectOnce<T>(
   return { ok: false, note: `${errorClass(lastError)} after two attempts` };
 }
 
+/** Loopback hosts, so a local reading can be told from a remote one. */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/** The hostname of a connection string, or null when it is not a URL. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 async function checkMigrations(): Promise<void> {
   const found = firstSet(["MIGRATION_DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING"]);
   if (!found) {
@@ -243,13 +255,29 @@ async function checkMigrations(): Promise<void> {
     return;
   }
   const applied = result.value;
+  /*
+   * NAME WHICH DATABASE WAS COUNTED.
+   *
+   * This check resolves MIGRATION_DATABASE_URL first, and `dotenv` fills that
+   * from `.env` whenever the shell has not set it. So running this from a
+   * terminal that had exported only DATABASE_URL silently counted migrations on
+   * the REMOTE database while every other number on screen came from the local
+   * one — and the operator read "27 applied but 29 exist on disk" as a fact
+   * about their laptop. It is read-only and it did no harm, but a reading whose
+   * subject is ambiguous is not evidence about anything.
+   *
+   * Loopback or not is the only distinction that matters, and a hostname is not
+   * a credential — but nothing else from the URL is ever printed.
+   */
+  const host = hostOf(found.value);
+  const where = host && !LOOPBACK.has(host) ? ` on remote host ${host}` : " on this machine";
   record({
     name: "migrations applied",
     state: applied === onDisk ? "PRESENT" : "INVALID",
     note:
       applied === onDisk
-        ? `${applied} of ${onDisk} applied`
-        : `${applied} applied but ${onDisk} exist on disk — run npm run db:migrate`,
+        ? `${applied} of ${onDisk} applied${where}`
+        : `${applied} applied but ${onDisk} exist on disk${where} — run npm run db:migrate`,
     blocking: true,
   });
 }

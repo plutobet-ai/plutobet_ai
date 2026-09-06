@@ -1201,7 +1201,50 @@ section.card h2 { margin: 0 0 8px; font-size: 16px; }
   .page-head { padding: 16px 0 12px; }
   .card { padding: 14px; }
   .bet .totals { grid-template-columns: repeat(2, 1fr); }
-  .statement td:nth-child(4), .statement th:nth-child(4) { display: none; }
+  /*
+   * THE FOURTH COLUMN IS NOT SPARE, AND ON ONE PAGE IT WAS THE ONLY CONTROL.
+   *
+   * This rule used to read
+   *
+   *   .statement td:nth-child(4), .statement th:nth-child(4) { display: none; }
+   *
+   * which drops whatever happens to be fourth below 560px. That is a
+   * reasonable thing to do to a running-balance column and a catastrophic
+   * thing to do by POSITION: every .statement in this codebase is an ADMIN
+   * table, and on /admin/kyc the fourth column is Decision — the Approve and
+   * Reject buttons. So an administrator on a phone could see the verification
+   * queue and could not act on it. No overflow, no error, no scrollbar: the
+   * control was simply absent. /admin/withdrawals has the same shape.
+   *
+   * Found by running the admin flows on the Pixel 7 profile, which is the
+   * entire reason the browser suite runs two device profiles rather than one
+   * narrowed window.
+   *
+   * The table scrolls inside its own box instead. Nothing is lost, and the
+   * PAGE still does not scroll sideways — which is the property the responsive
+   * sweep measures and the one the old rule was really protecting.
+   */
+  .statement {
+    /*
+     * The SCROLL BOX, not the content.
+     *
+     * A first attempt used `width: max-content`, which is the rule for the
+     * thing INSIDE a scroller: the box then grows to fit its widest row, has
+     * nothing left to scroll, and overflows the card instead. The action column
+     * ended up outside the viewport, and Playwright's click landed on the admin
+     * sidebar stacked above it — a control that is present, visible and
+     * unreachable, which is worse than one that is merely hidden.
+     *
+     * `max-width: 100%` keeps the box inside the card; the rows overflow it and
+     * scroll horizontally within it. Every column stays reachable and the PAGE
+     * still does not scroll sideways.
+     */
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .statement th, .statement td { padding-right: 14px; }
+  .statement td:last-child, .statement th:last-child { padding-right: 0; }
   .tile-row { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
   .tile { padding: 12px 6px; font-size: 11px; }
   .tile .ico { font-size: 21px; }

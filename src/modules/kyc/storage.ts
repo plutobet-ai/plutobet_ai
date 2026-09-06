@@ -7,6 +7,13 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { isReviewEnvironment } from "@/lib/review-mode";
+import {
+  deleteReviewDocument,
+  putReviewDocument,
+  reviewDocumentExists,
+  reviewDocumentUrl,
+} from "./review-storage";
 
 /**
  * KYC document storage on Backblaze B2.
@@ -136,6 +143,24 @@ export async function putKycDocument(params: {
 
   const key = documentKey(params.userId, params.kind, params.contentType);
 
+  /*
+   * A REVIEW SERVER WRITES TO A DIRECTORY IT THROWS AWAY.
+   *
+   * Placed AFTER every check above, never before. The allow-list, the empty
+   * check, the size cap and the server-generated key are the controls; the
+   * backend is only where the bytes come to rest. Putting this branch at the
+   * top of the function would have made the review path skip all four, which
+   * is how a test environment quietly stops testing anything.
+   *
+   * `isReviewEnvironment()` is false whenever B2_BUCKET, B2_KEY_ID or
+   * B2_APPLICATION_KEY is set, so this branch and the B2 one cannot both be
+   * reachable in the same process.
+   */
+  if (isReviewEnvironment()) {
+    putReviewDocument(key, params.body);
+    return { key, bytes: params.body.byteLength, contentType: params.contentType };
+  }
+
   await client().send(
     new PutObjectCommand({
       Bucket: bucket(),
@@ -168,6 +193,10 @@ export async function signedDocumentUrl(
     // injected value reaching outside the KYC namespace.
     throw new Error("refusing to sign a key outside the kyc namespace");
   }
+  // Same contract on a review server: short-lived, signed, and refusing
+  // anything outside the namespace — see review-storage.ts for why it is a
+  // real HMAC rather than a bare path.
+  if (isReviewEnvironment()) return reviewDocumentUrl(key, ttlSeconds);
   return getSignedUrl(
     client(),
     new GetObjectCommand({ Bucket: bucket(), Key: key }),
@@ -176,6 +205,7 @@ export async function signedDocumentUrl(
 }
 
 export async function documentExists(key: string): Promise<boolean> {
+  if (isReviewEnvironment()) return reviewDocumentExists(key);
   try {
     await client().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
     return true;
@@ -193,5 +223,9 @@ export async function documentExists(key: string): Promise<boolean> {
  * the image, not the fact that verification happened.
  */
 export async function deleteKycDocument(key: string): Promise<void> {
+  if (isReviewEnvironment()) {
+    deleteReviewDocument(key);
+    return;
+  }
   await client().send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
 }

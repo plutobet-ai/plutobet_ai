@@ -51,14 +51,29 @@ function naira(minor: bigint): string {
 }
 
 test.describe("the customer journey, in a browser", () => {
-  test("register is refused without a delivery provider, rather than leaking a code", async ({
-    request,
-  }) => {
+  test("a one-time code is never returned to whoever asked for it", async ({ request }) => {
     /*
-     * The most valuable thing a browser can prove about registration here.
-     * A console fallback that returns the one-time code in the response is fine
-     * on a developer's machine and catastrophic anywhere real, so the service
-     * refuses it under a production build. This asserts the refusal.
+     * WHAT THIS TEST USED TO ASSERT, AND WHY IT ASSERTS SOMETHING ELSE NOW.
+     *
+     * It asserted that `POST /api/auth/otp` REFUSED — because the console
+     * fallback returns the code in the response body, and `otp.service` blocks
+     * that under a production build. Correct, and it made registration
+     * untestable in a browser, so the whole flow sat in the manifest as an
+     * integration boundary for two passes.
+     *
+     * The review server now has a real delivery path: a local mailbox the
+     * requester cannot read without a per-run key. So the route SUCCEEDS here,
+     * and the property worth defending is no longer "it refuses" — it is the
+     * property that made the fallback dangerous in the first place. The code
+     * must not come back to whoever asked for it. That is asserted directly,
+     * on the response body, in the environment where a code is genuinely
+     * issued: the strictly stronger claim, and the one that would still fail if
+     * somebody reintroduced `devCode` tomorrow.
+     *
+     * The refusal itself is not lost. `otp-production-guard.acceptance.spec.ts`
+     * still proves the console provider is blocked under a production build,
+     * and `review-adapters.acceptance.spec.ts` proves the mailbox refuses to
+     * exist unless all four review conditions hold.
      */
     const response = await request.post("/api/auth/otp", {
       data: { phoneNumber: "+2348030000001", purpose: "PHONE_VERIFY" },
@@ -68,18 +83,22 @@ test.describe("the customer journey, in a browser", () => {
 
     expect(
       response.status(),
-      "the OTP route issued a code under a production build with no SMS provider",
-    ).toBeGreaterThanOrEqual(400);
-    expect(body, "a one-time code appeared in the response body").not.toMatch(/devCode/);
+      "the OTP route could not issue a code on the review server",
+    ).toBeLessThan(400);
+    expect(body, "the response carried a devCode field").not.toMatch(/devCode/);
+    expect(body, "a six-digit code appeared in the response body").not.toMatch(/\b\d{6}\b/);
 
     record(test.info().project.name, {
       page: "/register",
       viewport: "n/a",
       control: "Registration OTP guard",
-      action: "requested a verification code against a production build with no SMS provider",
-      observed: `refused with ${response.status()} and no code in the body — the console fallback is disabled outside development`,
+      action:
+        "requested a verification code and read the RESPONSE BODY of the request that issued it",
+      observed:
+        `answered ${response.status()} with no devCode field and no six-digit number anywhere in ` +
+        "the body. The code went to the local mailbox, which needs a per-run key to read — the " +
+        "console fallback's behaviour of handing it straight back is what is being excluded",
       route: "POST /api/auth/otp",
-      status: "BLOCKED_BY_KEY",
     });
   });
 
@@ -142,7 +161,10 @@ test.describe("the customer journey, in a browser", () => {
       control: "QA funding unreachable by a customer",
       action: "posted to four plausible QA-funding paths as a signed-in customer",
       observed:
-        "every one answered 404 — QA credit is a script (scripts/qa-credit.ts) gated on ALLOW_QA_CREDIT, and no HTTP route exposes it",
+        "every one answered 404. QA credit is a script (scripts/qa-credit.ts) gated on " +
+        "ALLOW_QA_CREDIT and NODE_ENV. The review-only /api/qa surface CAN fund a disposable " +
+        "account, and it answers 404 to this customer too — it needs a per-run key generated into " +
+        "a gitignored file, probed separately in security-extended.spec.ts",
       route: "POST /api/qa/credit · /api/qa-credit · /api/admin/credit · /api/wallet/credit → 404",
     });
 
@@ -350,11 +372,56 @@ test.describe("the customer journey, in a browser", () => {
         status: hasPartial ? undefined : "IMPLEMENTED_NOT_LIVE_TESTED",
       });
 
-      // Take the whole offer, through the authenticated route.
+      /*
+       * Take the whole offer, through the authenticated route — and CAPTURE THE
+       * RESPONSE.
+       *
+       * A run that fails here otherwise reports only "the confirmation never
+       * appeared", which is true of a refused cash-out, an intercepted click
+       * and a network fault alike. The status and the page's own warning are
+       * what tell them apart, and the difference matters because one of the
+       * three is a product defect and two are not.
+       */
+      const taking = page
+        .waitForResponse(
+          (r) => /\/cashout/.test(r.url()) && r.request().method() === "POST",
+          { timeout: 25_000 },
+        )
+        .catch(() => null);
+      await accept.scrollIntoViewIfNeeded();
       const takeRoute = await routeFor(page, async () => accept.click(), /\/cashout/);
+      const takeResponse = await taking;
+      const refusal = takeResponse && !takeResponse.ok() ? await takeResponse.text() : "";
+      /*
+       * THE WARNING NOTE, ONLY IF THERE IS ONE.
+       *
+       * This is diagnostic: on a refusal it names what the page told the
+       * customer, so a failure says which of three causes it was. On a SUCCESS
+       * there is no warning note at all — and that is the normal path.
+       *
+       * It used to call `.textContent()` straight onto the empty locator.
+       * `textContent()` auto-waits for its element, this project sets no
+       * `actionTimeout`, and the default of 0 means "wait as long as the test
+       * has". So every SUCCESSFUL cash-out sat here until the 180-second test
+       * budget ran out; the `.catch()` then swallowed the timeout, far too late
+       * to matter, and the still-pending confirmation assertion was reported as
+       * `Received: undefined`. The diagnostic written to explain failures was
+       * itself the failure, and it could never have passed.
+       *
+       * Counting first cannot block: `count()` resolves immediately against
+       * whatever is in the DOM now, which is exactly the question being asked.
+       */
+      const onScreen =
+        (await page.locator(".sb-note--warn").count()) > 0
+          ? await page.locator(".sb-note--warn").first().textContent({ timeout: 5_000 }).catch(() => null)
+          : null;
 
       const paid = page.locator("text=/Cashed out for/i").first();
-      await expect(paid, "the page did not confirm the cash-out").toBeVisible({ timeout: 25_000 });
+      await expect(
+        paid,
+        `the page did not confirm the cash-out — POST answered ${takeResponse?.status() ?? "no response"}` +
+          `${refusal ? `: ${refusal}` : ""}${onScreen ? ` · on screen: "${onScreen.trim()}"` : ""}`,
+      ).toBeVisible({ timeout: 25_000 });
       const paidText = ((await paid.textContent()) ?? "").trim();
 
       const afterCashout = await visibleCashMinor(page);

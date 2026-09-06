@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { clientIp } from "@/lib/api/handler";
+import { assertSameOrigin, clientIp } from "@/lib/api/handler";
 import { RATE_RULES } from "@/lib/api/rate-limit";
 import { rateLimiter } from "@/lib/api/rate-limit";
 import {
@@ -42,6 +42,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const ip = clientIp(request);
 
   try {
+    // Granting a role is the most consequential state change in the product.
+    // Same second layer as every other cookie-authenticated money route.
+    assertSameOrigin(request);
     const body = bodySchema.parse(await request.json());
 
     const identity = await requireSensitivePermission("admin.roles.manage");

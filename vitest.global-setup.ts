@@ -65,7 +65,25 @@ export default async function globalSetup() {
 
   await embedded.initialise();
   await embedded.start();
-  await embedded.createDatabase(DATABASE);
+
+  /*
+   * UTF8, EXPLICITLY — see the same note in scripts/dev-stack.ts.
+   *
+   * `initdb` uses the host locale, which on Windows makes template1 WIN1252,
+   * and `createDatabase` clones it. Production is UTF8, and a suite that cannot
+   * store a naira sign is a suite that cannot test this product's own currency.
+   */
+  const bootstrap = postgres(
+    `postgresql://${OWNER}:${OWNER_PASSWORD}@127.0.0.1:${port}/postgres`,
+    { max: 1, prepare: false },
+  );
+  try {
+    await bootstrap.unsafe(
+      `CREATE DATABASE "${DATABASE}" ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'`,
+    );
+  } finally {
+    await bootstrap.end({ timeout: 5 });
+  }
 
   const ownerUrl = connectionUrl(OWNER, OWNER_PASSWORD, port);
   const appUrl = connectionUrl(APP_USER, APP_PASSWORD, port);
