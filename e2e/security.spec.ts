@@ -145,7 +145,17 @@ test.describe("internal security verification", () => {
       await page.getByRole("button", { name: "Sign in" }).click();
       await page.waitForTimeout(2500);
       const landed = new URL(page.url());
-      if (landed.host !== new URL(page.context().pages()[0]!.url()).host || /evil\.example\.com/.test(page.url())) {
+      /*
+       * THE HOST, AND ONLY THE HOST.
+       *
+       * This also matched `evil.example.com` anywhere in the URL — including
+       * inside the `callbackUrl` QUERY STRING of the sign-in page the browser
+       * correctly stayed on. So the safest possible outcome, being refused and
+       * left where you started, was scored as an escape. It failed on the
+       * mobile project and passed on desktop purely because of which one
+       * happened to still be showing the query.
+       */
+      if (landed.host !== new URL(page.context().pages()[0]!.url()).host) {
         escaped.push(`${target} → ${page.url()}`);
       }
       await page.context().clearCookies();
@@ -342,7 +352,27 @@ test.describe("internal security verification", () => {
     });
   });
 
-  test("no QA or test-only funding route is reachable", async ({ page }) => {
+  test("no money-minting route is reachable by a customer", async ({ page }) => {
+    /*
+     * WHAT THIS TEST USED TO CLAIM, AND WHY IT NO LONGER DOES.
+     *
+     * It listed eight paths that had never existed, found eight 404s, and
+     * concluded there was "no test-only route in a production build". That was
+     * a true observation supporting a claim it could not make — it proved
+     * nothing about routes it had not thought of.
+     *
+     * There now IS a review-only surface in the bundle: it is how the browser
+     * suite makes a match finish and reads a one-time code. The honest,
+     * stronger claim is made by `security-extended.spec.ts`, which probes the
+     * FIVE REAL `/api/qa/*` paths with both verbs and with a wrong key, and
+     * owns the "No test-only route in a production build" control row.
+     *
+     * What survives here is the narrower question this list can actually
+     * answer: no route mints money for a customer. `scripts/qa-credit.ts` is a
+     * terminal script gated on ALLOW_QA_CREDIT and NODE_ENV, and the QA
+     * funding action lives behind the review key, never behind a path a
+     * customer could guess.
+     */
     await signIn(page);
     const candidates = [
       "/api/qa/credit",
@@ -359,14 +389,17 @@ test.describe("internal security verification", () => {
       const response = await page.request.post(path, { data: {}, failOnStatusCode: false });
       if (response.status() !== 404) reachable.push(`${path} → ${response.status()}`);
     }
-    expect(reachable, `test-only routes answered: ${reachable.join(", ")}`).toEqual([]);
+    expect(reachable, `money-minting routes answered: ${reachable.join(", ")}`).toEqual([]);
 
     record(test.info().project.name, {
       page: "any",
       viewport: viewportName(page),
-      control: "No test-only route in a production build",
-      action: `probed ${candidates.length} QA, seed and debug paths as a signed-in customer`,
-      observed: "every one answered 404 — none exists in the built application",
+      control: "QA funding unreachable by a customer",
+      action: `probed ${candidates.length} plausible credit, seed and debug paths as a signed-in customer`,
+      observed:
+        "every one answered 404. QA credit is a terminal script gated on ALLOW_QA_CREDIT and " +
+        "NODE_ENV, and the review surface's funding action sits behind a per-run key a browser " +
+        "never sees — asserted separately in security-extended.spec.ts",
       route: candidates.join(" · "),
     });
   });

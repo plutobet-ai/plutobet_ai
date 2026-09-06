@@ -10,7 +10,7 @@ import {
   type BettingContext,
 } from "@/modules/betting/__tests__/helpers";
 import type { EventResult, OddsProvider, OddsSnapshot, SportEvent } from "@/modules/odds/provider";
-import { cronOf, runScheduledFunction } from "./scheduler-harness";
+import { cronOf, runScheduledFunction } from "@/modules/qa/inngest-harness";
 
 /**
  * The REGISTERED scheduled function, end to end.

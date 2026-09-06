@@ -6,14 +6,17 @@ or historical evidence of one pass. Where any of them disagrees with this file,
 this file is right.
 
 **Last updated:** 2026-09-05
-**Branch described:** `main`, which now carries the completed
-`ui/plutobet-sportsbook-redesign` work
-**Merged to `main`:** **yes**, by fast-forward. **Pushed:** **yes**, to both
-remotes. **Deployed:** **yes to Vercel production, unintentionally** — a
-pre-existing integration deploys on every `main` push; §0 explains what that does
-and does not mean. **Railway: not deployed.**
-Commit count and remote state are recorded in §0 and read from git, never
-repeated from this header.
+**Branch described:** `finish/developer-verification-and-truth` — the
+gap-closure branch, cut from `main` at `299d4b9`
+**Merged to `main`:** **no.** `main` still carries the redesign work and has not
+moved. **Pushed:** **partly** — the first six commits are on
+`plutobet-ai/plutobet_ai`; the newest are **local only** until the owner says
+otherwise (§0 has the exact commands). **Deployed:** **no deployment was made in
+this pass.** A Vercel production deployment fired during the PREVIOUS pass when
+`main` was pushed to `origin`, and §0 explains what that does and does not mean.
+**Railway: not deployed.**
+Commit count, branch and remote state are recorded in §0, read from git, and
+checked by `npm run ci:docs` — never repeated from this header.
 
 **No credential, connection string, one-time code, personal detail or other
 secret value appears anywhere in this document, and none may be added to it.**
@@ -90,13 +93,14 @@ browser during this pass — not that it looks right in the source.
 
 | | |
 |---|---|
-| Branch | **`finish/developer-verification-and-truth`** — the gap-closure branch, **pushed to `plutobet` only** (see the Vercel section for why that remote and not the other) |
+| Branch | **`finish/developer-verification-and-truth`** — the gap-closure branch. `npm run ci:docs` compares this row against `git rev-parse --abbrev-ref HEAD` and fails if they differ, because this header once said `main` for a whole pass whose work was somewhere else |
 | Branched from | `main` at `299d4b9`, after the redesign was merged |
-| HEAD | the commit titled **"Tell a customer when their own limit stopped them, and stop lying in the screenshots"** — read its hash with `git rev-parse HEAD` |
-| Commits on this branch | 4, listed under "Files being modified right now" |
+| HEAD | read it with `git rev-parse HEAD`. No hash is written here — see the note below for why one cannot be |
+| Commits on this branch | read with `git rev-list --count main..HEAD`; `ci:docs` checks any number stated here against it |
+| Newest commits NOT on any remote | **the ones added by this pass.** The first six are on `plutobet`; everything after them exists **only on this machine** until the owner runs the publication command below. `git log --oneline plutobet/finish/developer-verification-and-truth..HEAD` lists exactly which |
 | Working tree | **clean** |
-| `main` | merged, pushed to both remotes, and **must not be pushed again without deciding about the deployment it triggers** |
-| Pushed | **yes, to `plutobet` (`plutobet-ai/plutobet_ai`) on 2026-09-05**, at the owner's instruction, and **not** to `origin`. That repository has **never created a deployment** — checked against its deployments API, which returns none — so publishing there has no deploy consequence. `origin` is the one that deploys |
+| `main` | **untouched by this pass** — still `299d4b9` on both remotes, not merged into, not pushed. It **must not be pushed without deciding about the deployment it triggers** |
+| Pushed | **partly.** The branch exists on `plutobet` (`plutobet-ai/plutobet_ai`) as of 2026-09-05, at the owner's instruction, and **not** on `origin`. That repository has **never created a deployment** — checked against its deployments API, which returns none — so publishing there has no deploy consequence. `origin` is the one that deploys |
 | Default push remote | `remote.pushDefault = plutobet`, set at the owner's instruction, so a bare `git push` goes to the non-deploying remote |
 | **Production mutations performed** | **NONE.** No production database, provider, dashboard or deployment was written to. Every run in this pass used the local disposable Postgres and Redis, review-only secrets, and a review server that refuses a non-loopback host and blanks every provider credential (findings 31 and 32) |
 | `origin/main` and `plutobet/main` | **both pushed 2026-09-05**, fast-forward from `83cb633`. They carry the **same commit and the same tree as each other** — verify with the command below rather than trusting a hash written here |
@@ -872,10 +876,13 @@ is not evidence.
 ### Exact next action
 
 
-**A gap-closure pass is in progress on `finish/developer-verification-and-truth`.**
+**Two gap-closure passes have run on `finish/developer-verification-and-truth`.**
+The first reconciled this document and built the manifest, the coverage gate and
+the first browser suites. The second — recorded below — closed the flows the
+first one had classified as untestable, added the settlement journey and the
+rest of the security matrix, and found six more defects doing it.
 
-The redesign work is merged and this file is being reconciled section by
-section. What is done and what is next:
+What is done:
 
 | Unit | State |
 |---|---|
@@ -886,18 +893,47 @@ section. What is done and what is next:
 | Account, safer gambling, wallet and KYC coverage | **DONE** — `e2e/account-and-wallet.spec.ts` |
 | Admin browser verification | **DONE** — `e2e/admin.spec.ts`, including a support agent refused at the URL **and** at the route |
 | Browser-level customer journey | **DONE** — `e2e/journey.spec.ts`: sign in, bet ₦200, balance moves exactly ₦200, admin sees it, cash out taken, sign out |
-| `INTERNAL_SECURITY_VERIFICATION` | **DONE** — `e2e/security.spec.ts`, 12 probes; found finding 41 |
+| `INTERNAL_SECURITY_VERIFICATION` | **DONE** — `e2e/security.spec.ts` (12 probes; found finding 41) and `e2e/security-extended.spec.ts` (14 more, covering every attack class the brief named; found findings 51 and 52) |
 | Dependency audit | **DONE** — 0 in shipped dependencies; 4 moderate dev-only, recorded with exploitability |
-| Final gates, twice | **DONE** — on a freshly reset disposable database. vitest **76 files / 989 passed / 1 skipped** ×2 identical; playwright **273 passed / 13 skipped / 0 failed** ×2 identical; control coverage clean both times |
+| Review-only delivery and storage adapters | **DONE** — a local mailbox for one-time codes and a disposable local KYC store, both refusing on four independent environment conditions, each asserted on its own |
+| The flows the first pass called untestable | **DONE** — registration, "change details", the duplicate refusal, password reset, a successful password change, session revocation from a second browser, KYC upload and admin review, the withdrawal caps, cool-off, self-exclusion and its survival into a new account, suspended and closed markets, a repriced price, duplicate placement, partial cash-out, a stale cash-out offer, and the Betslip/My Bets tabs |
+| Browser-to-worker settlement journey | **DONE** — `e2e/settlement-journey.spec.ts`: a bet placed in the visible betslip reaches WON, LOST and VOID through `dispatchSettlementOutbox` → `settleEvent` → `settleBet`, paid exactly once, replayed with no second payment |
+| A successful sensitive admin action | **DONE** — `e2e/admin-actions.spec.ts`: a payout approval refused without step-up, then completed with it, then found in the audit log |
+| Internal security matrix completed | **DONE** — `e2e/security-extended.spec.ts` adds CSRF, session fixation, stored and reflected XSS, upload abuse, SSRF shapes, mass assignment, forwarding-header spoofing, webhook replay, per-flow idempotency conflicts and the three cross-user surfaces |
+| Coverage gate rebuilt on a closed reason list | **DONE** — a non-browser row must now carry one of seven codes, and a reason that reads as an inconvenience is refused outright |
+| Documentation checker strengthened | **DONE** — 13 rules; the six new ones each **proved to fail** on the contradictions this pass was asked to correct, and clean once corrected |
+| Money-invariant gate | **DONE** — `npm run ci:money`, nine read-only invariants that must all be zero |
+| Final gates, twice | **DONE** — see §4. Both runs on a freshly recreated disposable database and a flushed disposable Redis: **349 passed / 13 skipped / 0 failed / 0 flaky**, twice, and **1011 unit tests passed / 1 skipped**, twice |
+| Defects found by the final runs | **THREE, all fixed** — finding 56 (the cash-out confirmation was destroyed by the refresh that caused it), finding 57 (the diagnostic written to explain failures blocked every successful run), finding 58 (a readiness check silently counted migrations on the production database and is disclosed in §22) |
 
 **The active developer backlog is empty.** Everything still outstanding needs an
 owner, a key, a contract, a product decision, a regulator or a human — each
 named in §23 and in the owner-decision table.
 
-**Pushed to `plutobet` only.** The branch is published at
-`plutobet-ai/plutobet_ai`, which has never created a deployment, and **not** to
-`origin`, which deploys on every push. **`main` was not touched on either
-remote** — it is still `299d4b9` on both.
+### Exactly what is published, and the exact commands to publish the rest
+
+**Nothing in this pass was pushed and nothing was deployed.** The branch on
+`plutobet` is six commits behind this working tree.
+
+```bash
+# What is local only. Run this first; it is the list being published.
+git log --oneline plutobet/finish/developer-verification-and-truth..HEAD
+
+# SAFE: publishes the branch to the remote that has never created a deployment.
+git push plutobet finish/developer-verification-and-truth
+
+# Verify it landed, and that main did not move.
+git ls-remote plutobet refs/heads/finish/developer-verification-and-truth
+git ls-remote plutobet refs/heads/main      # expect 299d4b9
+git ls-remote origin  refs/heads/main       # expect 299d4b9
+```
+
+**Do not run either of these without deciding about a deployment first:**
+
+```bash
+git push origin finish/developer-verification-and-truth   # creates a Vercel PREVIEW
+git push origin main                                      # creates a Vercel PRODUCTION deploy
+```
 
 **Also urgent and unchanged: check the Vercel production deployment** that the
 earlier `main` push triggered. See "A production deployment happened" below.
@@ -1036,21 +1072,21 @@ against. Every one is a full run, not a subset.
 | `npx tsc --noEmit` | **exit 0**, 0 errors |
 | `npx eslint .` | **exit 0**, 0 errors, **0 warnings** |
 | `node scripts/secret-scan.mjs` | **clean**, 15 rules |
-| `node scripts/check-docs.mjs` | **clean**, 13 documents, 7 rules |
+| `node scripts/check-docs.mjs` | **clean**, 13 documents, **13 rules** |
 | `git diff --check` | **exit 0**, no whitespace or conflict markers |
-| `npx vitest run` | **76 files, 989 passed, 1 skipped, 0 failed** — **run twice after the final code change, identical both times** |
+| `npx vitest run` | **78 files, 1011 passed, 1 skipped, 0 failed** — **run twice after the final code change, identical both times** |
 | `npm run build` | **exit 0**, `deploy: target=local (no migrations)` |
-| `npx playwright test` | **286 tests: 273 passed, 13 skipped, 0 failed** (desktop 1440×900 + Pixel 7) — **run twice, identical** |
-| `node scripts/check-control-coverage.mjs` | **exit 0** — 137 controls declared, 109 browser-covered, every one with an audit row; 10 blocked and 18 integration-boundary, each with a stated reason |
+| `npx playwright test` | **362 tests: 349 passed, 13 skipped, 0 failed** (desktop 1440×900 + Pixel 7) — **run twice on a freshly recreated database, identical** |
+| `node scripts/check-control-coverage.mjs` | **exit 0** — **162 controls declared, 149 browser-covered**, every one with an audit row **in both projects**; 9 blocked and **4** integration-boundary, each carrying one of seven accepted reason codes |
 | Screenshots + contact sheet | **28 screenshots** re-captured on the clean database; `artifacts/ui-review/00-contact-sheet.png` regenerated and inspected |
-| Interaction audit | **242 rows**, generated from the run, `artifacts/ui-review/INTERACTION_AUDIT.md` |
+| Interaction audit | **346 rows**, generated from the run, `artifacts/ui-review/INTERACTION_AUDIT.md` |
 | `node scripts/check-migrations.mjs` | **29 of 29** apply to a clean database, 62 tables, exit 0 |
 | `npm audit --omit=dev` | **0 vulnerabilities** in what ships |
 | `npx tsx scripts/smoke-admin.ts` | **18 of 18** admin queries clean, exit 0 |
 | `npx tsx scripts/audit-db-roles.ts` | **exit 0** — the runtime role owns nothing and cannot `DROP`, `ALTER` or `TRUNCATE` the ledger. **Local stack only** |
 | `readiness:demo` | **NOT DEMO READY**, 1 blocking item — correct, see below |
 | `readiness:real-money` | **NOT REAL_MONEY_READY**, 13 blocking items — correct, see below |
-| `INTERNAL_SECURITY_VERIFICATION` | **12 of 12** probes pass, §20 |
+| `INTERNAL_SECURITY_VERIFICATION` | **26 of 26** probes pass across the two files, §20 |
 
 **The vitest total is unchanged at 989** because this pass added browser tests,
 not unit tests. The single skip is the opt-in live-provider contract, which runs
@@ -1086,12 +1122,21 @@ runs only when `ODDS_API_KEY` is set; it is deliberately unset, so the skip is
 by design and not a failure being hidden. There are **no** `.only`, no
 `test.todo` and no other skips.
 
-The browser suite grew from 118 to 152 tests because this pass added the
-7-viewport responsive sweep and the accessibility file. **All 13 skips are by
-design and none hides a failure**: six are the measured-column check, which
+The browser suite has grown across three passes — 118, then 152 when the
+7-viewport responsive sweep and the accessibility file were added, and again in
+this pass with registration, password reset, session revocation, KYC, the
+withdrawal caps, cool-off, self-exclusion, market states, partial cash-out, the
+browser-to-worker settlement journey, the successful admin action and the
+extended security matrix. **The current total is the one in §4, which is read
+from `artifacts/playwright-report.json` and checked by `npm run ci:docs`; no
+other figure in this document may disagree with it.**
+
+**Every skip is by design and none hides a failure**: the measured-column check
 `test.skip`s on the mobile project because a phone viewport is narrower than the
-column it measures, and seven are the responsive sweep, which overrides the
-viewport itself and so runs once on the desktop project rather than twice.
+column it measures, and the responsive sweep overrides the viewport itself and
+so runs once on the desktop project rather than twice. The live-provider odds
+contract runs only when `ODDS_API_KEY` is set; it is deliberately unset, so that
+skip is a **blocked external check and is not counted as a pass**.
 
 **The accessibility bar is met**: 0 critical and 0 serious violations across 25
 pages in both projects, and axe's advisory (moderate/minor) set is empty too.
@@ -1299,9 +1344,19 @@ paragraph was being written:
 reaches real behaviour — a route that exists, a request that is answered, or
 state that persists." That is a claim from **reading the code**, and it was
 applied to fifty-five customer-facing controls, where it reads exactly like a
-claim that somebody used them. Seven of those controls now say
-`VERIFIED_IN_REAL_BROWSER` because they appear in the generated interaction
-audit. The other fifty say `IMPLEMENTED_NOT_LIVE_TESTED`.
+claim that somebody used them.
+
+**That gap is now closed.** When the label was first retired, seven of those
+controls could say `VERIFIED_IN_REAL_BROWSER` and fifty said
+`IMPLEMENTED_NOT_LIVE_TESTED`. The pass after it took the number of
+browser-verified controls into three figures, and THIS pass took the remainder:
+registration, password reset, a successful password change, session revocation,
+KYC upload and review, the withdrawal caps, cool-off, self-exclusion, suspended
+and closed and repriced markets, partial and stale cash-out, settlement through
+the registered workers, and a completed sensitive admin action. The current
+split is in §5 and is checked against the generated audit by
+`npm run ci:controls`; **no customer-facing control that a browser can reach
+still says `IMPLEMENTED_NOT_LIVE_TESTED`.**
 
 VERIFIED_WORKING was defined as "exercised against a real database or real
 provider data, with a test or a recorded observation behind it."
@@ -1324,7 +1379,7 @@ product that also promises casino, virtuals, in-play, fantasy and more.
 | Can a test account complete a bet end to end? | **Yes, twice over.** `VERIFIED_END_TO_END` through the services — 14 steps, one account, one run, ending with the ledger agreeing. **And `VERIFIED_IN_REAL_BROWSER`** — sign in, back a price, stake ₦200, watch CASH fall by exactly ₦200.00, find it in My Bets, see the administrator holding the same bet, take a ₦190.00 cash-out and watch the balance rise by exactly that, then sign out. The two cover different halves: the first controls the clock and drives settlement; the second holds a cookie |
 | Can a stranger's real money enter or leave? | **No.** No payment credentials exist |
 | Does a winning bet get paid without a human? | **Yes** — proven once on a real fixture, §14 |
-| Is the customer interface finished? | **Redesigned and verified in a real browser** — 139 Playwright tests, **38 audited interactions**, 28 screenshots, **all seven owner-named viewports swept**, and an accessibility pass at **0 critical / 0 serious** (§5, §6, §8). **Merged to `main` on both remotes.** |
+| Is the customer interface finished? | **Redesigned and verified in a real browser** — 349 Playwright tests passing, **346 audited interactions**, 28 screenshots, **all seven owner-named viewports swept**, and an accessibility pass at **0 critical / 0 serious** (§5, §6, §8). The redesign is **merged to `main` on both remotes**; the gap-closure work on top of it is on its own branch, §0 |
 | Is the deployment usable? | **Not for real customers.** `NEXTAUTH_URL` and the runtime database role remain, §23. Note a Vercel production deployment now exists — see §0 for what it does and does not mean |
 | Is it legal to operate? | **No.** No licence, §16 |
 
@@ -1358,10 +1413,9 @@ runs, and where it ran the role was already right. Against production
 configuration it is an additional blocker for both modes.
 
 **QA ledger credit is not a deposit**, and neither count may be reduced by
-treating one as the other.
-
-**QA ledger credit is not a deposit** and is never presented as one anywhere in
-this product or its reporting.
+treating one as the other. It is never presented as one anywhere in this product
+or its reporting — not on a wallet page, not in an admin total, and not in this
+document.
 
 ---
 
@@ -1370,28 +1424,49 @@ this product or its reporting.
 Run from the repository root. Every figure below is from the run on the branch
 described at the top of this file.
 
-**Run on 2026-09-04/05. The suites were run TWICE after the final code change,
+**Run on 2026-09-06. Both suites were run TWICE after the final code change,
+each time on a freshly recreated disposable database and a flushed local Redis,
 with identical results both times**, to catch order dependence and flakiness.
+Running twice is not ceremony here: it is what caught findings 45, 46 and 47 in
+the previous pass, and the pair of runs below is what confirmed 56 and 57 in
+this one.
 
 | Gate | Command | Result |
 |---|---|---|
 | Types | `npx tsc --noEmit` | **exit 0** |
 | Lint | `npm run lint` | **exit 0** — 0 errors, **0 warnings** |
-| Tests | `npx vitest run` | **76 files, 989 passed, 1 skipped, 0 failed** — ×2, identical |
+| Tests | `npx vitest run` | **78 files, 1011 passed, 1 skipped, 0 failed** — ×2, identical |
 | The 1 skip | — | the opt-in live provider contract (`ODDS_LIVE_CONTRACT`) — **not counted as passing** |
-| Browser | `npx playwright test` | **139 passed, 13 skipped, 0 failed** — ×2, identical |
+| Browser | `npx playwright test` | **362 tests: 349 passed, 13 skipped, 0 failed** — ×2, identical |
 | The 13 skips | — | 6 measured-column checks, meaningless on a viewport narrower than the column; 7 responsive sweeps, which override the viewport themselves and so run once on the desktop project rather than twice |
 | Accessibility | `npx playwright test e2e/accessibility.spec.ts` | **0 critical, 0 serious** across 25 pages in both projects; the advisory set is empty too. Keyboard focus and keyboard-trap tests pass |
 | Responsive | `npx playwright test e2e/viewports.spec.ts` | **7 viewports × 13 pages**, all pass |
 | Build | `npm run build` | **exit 0** |
-| Secret scan | `node scripts/secret-scan.mjs` | clean — **452 files**, 15 rules |
+| Secret scan | `node scripts/secret-scan.mjs` | clean — **462 files**, 15 rules |
 | Whitespace | `git diff --check` | clean |
 | Migrations | `node scripts/check-migrations.mjs` | **29 of 29** applied to a clean database, 62 tables |
+| Control coverage | `npm run ci:controls` | **exit 0** — **162 declared: 149 browser, 9 blocked, 4 integration-boundary, 0 hidden**; every browser control has an audit row **in both projects**, and every exclusion carries one of seven accepted reason codes |
+| Interaction audit | `node scripts/build-ui-review.mjs` | **346 rows**, **28 screenshots** — regenerated from the run, not hand-edited |
+| Money invariants | `npm run ci:money` | **exit 0** — all **9** are zero: no unbalanced transaction, no negative wallet, no duplicate payout, no residual exposure, no abandoned outbox item |
+| Documentation | `npm run ci:docs` | **clean** — 13 documents, **13 rules**. The six added this pass were each proved to fail on a controlled stale value and clean once corrected |
 | Admin queries | `npm run admin:smoke` | **18 of 18** clean, exit 0 |
 | Database roles | `npm run db:audit-roles` | **exit 0** — the runtime role owns nothing and cannot `DROP`, `ALTER` or `TRUNCATE` the ledger. **Local stack only**; see the limit below |
-| Demo readiness | `npm run readiness:demo` | **exit 1**, correctly — §3 |
-| Real-money readiness | `npm run readiness:real-money` | **exit 1**, correctly — §3 |
-| CI | GitHub Actions | **green on both remotes** for every commit pushed to `main` in this pass — "typecheck, test, build" `success` |
+| Demo readiness | `npm run readiness:demo` | **exit 1**, correctly — **1 blocking item** (`NEXTAUTH_URL` points at localhost), §3 |
+| Real-money readiness | `npm run readiness:real-money` | **exit 1**, correctly — **13 blocking items**, every one an owner, key, contract or regulatory matter, §3 |
+| CI | GitHub Actions | **green on both remotes** for every commit pushed to `main` in the PREVIOUS pass — "typecheck, test, build" `success`. **The commits made in THIS pass have not been through CI**, because nothing has been pushed |
+
+**Read the exit code, not the last line.** `npm run readiness:demo | tail -6`
+reports the exit status of `tail`, which is always 0. Both readiness commands
+above were re-run **unpiped** to obtain the exit codes quoted. The same mistake
+with `Tee-Object` produced a false "VITEST EXIT: 0" earlier in this project's
+history, and it is the reason the rule is written down rather than remembered.
+
+**The browser suite is not in CI.** It needs the review stack — a local
+PostgreSQL, a local Redis, a production build and `scripts/review-server.mjs` —
+and CI runs none of them. `ci:controls` and `ci:money` are in the same position:
+they read what a browser run produced. That is a real limit and it is stated
+rather than implied; the CI job covers lint, typecheck, secret scan,
+documentation consistency, migration validation, the unit suite and the build.
 
 **Not re-run in this pass, and therefore not re-asserted**: `db:verify-restore`
 and `bench:sync`. Their previous results stand where they are recorded (§21), but
@@ -1419,8 +1494,8 @@ last of those was found by looking at a screenshot, which is not a gate at all.
 Status: **redesigned, verified in a real browser, and merged to `main` on both
 remotes.**
 
-Evidence: **139 Playwright tests** across desktop 1440×900 and a Pixel 7 profile,
-**38 audited interactions** in `artifacts/ui-review/INTERACTION_AUDIT.md`, 28
+Evidence: **349 passing Playwright tests** across desktop 1440×900 and a Pixel 7
+profile, **346 audited interactions** in `artifacts/ui-review/INTERACTION_AUDIT.md`, 28
 screenshots on the contact sheet, a **7-viewport responsive sweep** covering
 every size the owner named (390×844, 430×932, 768×1024, 1024×768, 1366×768,
 1440×900, 1920×1080), and an **accessibility pass at 0 critical / 0 serious**
@@ -1596,7 +1671,7 @@ disagrees with the generated audit, the audit is right.**
 | Control | Does | Status |
 |---|---|---|
 | Empty state | Says the slip is empty and how to add a selection | `VERIFIED_IN_REAL_BROWSER` |
-| Betslip / My Bets tabs | Switch panes | `IMPLEMENTED_NOT_LIVE_TESTED` — the panes render; the tab itself is not pressed |
+| Betslip / My Bets tabs | Switch panes | `VERIFIED_IN_REAL_BROWSER` — both pressed, with a selection on the slip: each tab selects itself and deselects the other, My Bets replaces the stake field with a route to the full list, and returning keeps the selection and its count |
 | Remove selection | Removes it | `VERIFIED_IN_REAL_BROWSER` — slip returned to its empty state |
 | Stake field | Parsed to integer kobo; rejects anything that is not a plain naira amount | `VERIFIED_IN_REAL_BROWSER` — "12.345" refused in the page, "200" accepted; 11 unit tests behind it |
 | Quick stakes (₦100/500/1,000/5,000) | Set the stake | `VERIFIED_IN_REAL_BROWSER` |
@@ -1629,11 +1704,11 @@ picks and stake — there is no second copy in component state to drift from it.
 | Forgot password | Navigates to `/forgot-password` | `VERIFIED_IN_REAL_BROWSER` |
 | Sign out | Ends the session | `VERIFIED_IN_REAL_BROWSER` — a protected page no longer opens afterwards |
 | Callback guard | Refuses a callback pointing off this site | `VERIFIED_IN_REAL_BROWSER` — 4 hostile forms, including protocol-relative and backslash |
-| Register step 1 → Send code | `POST /api/auth/otp` | `BLOCKED_BY_KEY` — **and the refusal is now asserted**: under a production build with no SMS provider the route answers 503 and returns no code. The console fallback would put the code in the response body |
-| Register step 2 → Create account | `POST /api/auth/register`, then signs in through the ordinary credentials flow | `VERIFIED_BY_INTEGRATION_TEST` — unreachable in a browser against the review server, because step 1 cannot complete without a provider. `customer-journey.acceptance.spec.ts` registers through the real handler |
-| Change details | Returns to step 1 and clears the code | `IMPLEMENTED_NOT_LIVE_TESTED` — behind the same step-1 blocker |
+| Register step 1 → Send code | `POST /api/auth/otp` | `VERIFIED_IN_REAL_BROWSER` — a code is issued and delivered to the review server's local mailbox, and **the response body carries no six-digit number and no `devCode` field**, which is asserted on the network rather than inferred from the screen. Termii delivery to a real handset stays `BLOCKED_BY_KEY` and is never claimed |
+| Register step 2 → Create account | `POST /api/auth/register`, then signs in through the ordinary credentials flow | `VERIFIED_IN_REAL_BROWSER` — the whole two-step flow completed in a browser: fill, read the delivered code out of band, submit, land signed in, and `/api/wallet` answers 200. The duplicate-address refusal is asserted too |
+| Change details | Returns to step 1 and clears the code | `VERIFIED_IN_REAL_BROWSER` — pressed with a code entered: step 1 comes back with the details intact and the code field empty, so a code cannot be carried onto a different number |
 | Reset: send code | `POST /api/auth/password-reset` — always advances, so the page cannot be used to discover which addresses have accounts | `VERIFIED_IN_REAL_BROWSER` — a known and an unknown address now answer **identically**. They did not before; see finding 41. Delivery still needs Resend |
-| Reset: set new password | `PUT /api/auth/password-reset` | `VERIFIED_BY_INTEGRATION_TEST` — needs a delivered code |
+| Reset: set new password | `PUT /api/auth/password-reset` | `VERIFIED_IN_REAL_BROWSER` — completed on an isolated account: the code is read from the mailbox, the password is set, and then **both** passwords are tried at the sign-in form. The old one is refused and the new one signs in |
 | Sign in with your new password | A link to `/signin`. **Fixed in an earlier pass**: it used to call `signIn` with no password, which can only fail | `VERIFIED_IN_REAL_BROWSER` — it is a link, and the sign-in form it points at is exercised |
 
 ### Account, wallet and money
@@ -1645,18 +1720,18 @@ picks and stake — there is no second copy in component state to drift from it.
 | Deposit: account number panel | Displays the dedicated NUBAN. There is deliberately no amount field — the customer transfers what they like and the webhook attributes it | `BLOCKED_BY_KEY` — needs Paystack. **Asserted**: with no provider the page renders no ten-digit account number rather than a plausible one |
 | Withdraw: minimum and over-balance | Named in the page, and the submit disabled, before anything is sent | `VERIFIED_IN_REAL_BROWSER` |
 | Withdraw: bank field | A picker from the provider abstraction, falling back to a typed code only when the list cannot be fetched — and saying so | `VERIFIED_IN_REAL_BROWSER` for the field's behaviour; the payout leg stays `BLOCKED_BY_KEY` |
-| Withdraw: daily cap and KYC restriction | Refused by tier | `VERIFIED_BY_INTEGRATION_TEST` — needs an account at a specific tier with a specific day's history |
+| Withdraw: daily cap and KYC restriction | Refused by tier | `VERIFIED_IN_REAL_BROWSER` on two isolated accounts. Tier 0 with ₦200,000 in it is refused outright. Tier 1 is refused above ₦50,000, accepted at ₦40,000, and then refused at a further ₦20,000 — proving the cap is a **rolling daily total**, not a per-request ceiling |
 | Verify identity | Navigates to `/kyc`; states the tier and what it permits | `VERIFIED_IN_REAL_BROWSER` — **and asserted not to claim** an identity was checked against any registry, because none is connected |
-| KYC upload | Writes to object storage | `VERIFIED_BY_INTEGRATION_TEST` — the review server blanks the B2 credentials on purpose (finding 31), so a browser upload has nowhere legitimate to go |
+| KYC upload | Writes to object storage | `VERIFIED_IN_REAL_BROWSER` against **disposable local storage**. The review server still blanks the B2 credentials (finding 31); what changed is that there is now a local backend for the bytes to land in. It is a backend swap and not a bypass — the content-type allow-list, the 10MB cap, the server-generated object key and the short-lived signed URL are the same code — and the admin's review link is fetched as issued (200) and again with one character of its signature changed (403) |
 | Account: 9 manage tiles | Navigate to real pages | `VERIFIED_IN_REAL_BROWSER` — every link followed, all answered under 400 |
 | Account: verify email | `POST /api/account/email-verify` | `BLOCKED_BY_KEY` — needs Resend |
-| Security: change password | `POST /api/account/password` | `VERIFIED_IN_REAL_BROWSER` for the refusal of a wrong current password. The success path is deliberately not driven: rotating the shared demo password mid-run would break every later sign-in |
-| Security: sign out a device / all devices | `DELETE /api/account/sessions` — a revoked session is downgraded on its next request | `VERIFIED_IN_REAL_BROWSER` for the control; the downgrade itself is `VERIFIED_BY_INTEGRATION_TEST`, being a property of the *next* request |
+| Security: change password | `POST /api/account/password` | `VERIFIED_IN_REAL_BROWSER`, both ways. A wrong current password is refused, and a **successful** change is driven on an isolated account: the device that made it keeps its session, and the new password signs in from a cleared browser context. Rotating the SHARED demo password would break every later sign-in, which is a reason to use a different account, not a reason not to test it |
+| Security: sign out a device / all devices | `DELETE /api/account/sessions` — a revoked session is downgraded on its next request | `VERIFIED_IN_REAL_BROWSER` end to end. The same account is signed in from **two real browser contexts**; one revokes the other; the revoked context's next call to `/api/wallet` is refused while the revoking context still answers 200 |
 | Preferences: odds format, notifications | `PUT /api/account/preferences` | `VERIFIED_IN_REAL_BROWSER` — both changed, saved, and still set after a reload |
 | Safer gambling: deposit, stake and loss limits | `POST /api/responsible` — lowering applies immediately, raising waits 24 hours | `VERIFIED_IN_REAL_BROWSER` — all three set through the form and listed back |
 | Safer gambling: delayed increase | The 24-hour wait | `VERIFIED_BY_INTEGRATION_TEST` — a browser cannot wait a day |
-| Safer gambling: cool-off ("Take a break") | Pauses betting and deposits | `VERIFIED_IN_REAL_BROWSER` for the control being offered, enabled, labelled with its duration and stating that it cannot be shortened. **Not started**: it would lock the shared demo account out of every later test |
-| Safer gambling: self-exclude | Closes the account, registered against the verified identity | `VERIFIED_BY_INTEGRATION_TEST` — irreversible for the account that takes it |
+| Safer gambling: cool-off ("Take a break") | Pauses betting and deposits | `VERIFIED_IN_REAL_BROWSER`, **started for real** on an isolated funded account. It places a bet, takes a one-day break, and the next placement is refused — with the customer told a break is the reason, which is finding 46 asserted in a browser for the first time |
+| Safer gambling: self-exclude | Closes the account, registered against the verified identity | `VERIFIED_IN_REAL_BROWSER`, **taken for real** on an isolated account with a verified identity on file. It cannot sign in again; a session cookie held from BEFORE the exclusion cannot place a bet; and the same identity number submitted on a brand-new account is refused. Finding 55 came out of it: the control did not actually sign the customer out |
 | Referrals: copy link / share | Clipboard, and the Web Share sheet where the browser has one | `VERIFIED_IN_REAL_BROWSER` |
 | Rewards: see promotions | Navigates | `VERIFIED_IN_REAL_BROWSER` |
 | Date of birth: completion page and underage refusal | Write-once; underage is 403 and the date is not echoed back | `VERIFIED_IN_REAL_BROWSER` |
@@ -1979,6 +2054,81 @@ decision and nothing is trapped — the bet still settles and still pays.
 Withdrawal is how a self-excluded customer gets their money out, and refusing it
 would trap them.
 
+### Finding 56 — the confirmation was destroyed by the refresh that caused it
+
+`VERIFIED_IN_REAL_BROWSER`, fixed. Found by **reading the component while
+investigating a journey failure that turned out to have a different cause**
+(finding 57). Saying the journey "caught it" would be the convenient version and
+it is not what happened: the journey never got far enough to judge.
+
+`bets/page.tsx` rendered the cash-out panel only while `bet.status ===
+"PENDING"`. On a successful take, the panel set its own state to show **"Cashed
+out for the amount paid"** and then called `router.refresh()` — which re-rendered
+the ticket as `CASHED_OUT` and **unmounted the component mid-sentence**. The only
+plain statement of what the customer had just been paid lived for exactly one
+server round-trip and was then removed by the very refresh that proved it had
+worked.
+
+Three things about this are worth keeping:
+
+- **It is invisible on a partial.** A partial leaves the bet `PENDING`, so the
+  panel stays mounted and its message persists. The dedicated partial spec
+  passed throughout, and would have gone on passing.
+- **A `role="status"` node destroyed before a screen reader reaches it has
+  announced nothing at all.** The durable state — the "Cashed out" pill and the
+  "Returned" column — is something to infer from, not a statement, and a
+  customer using a screen reader got neither.
+- **The proof is that the text now survives a cold load.** A fresh `GET /bets`
+  with no cash-out in flight renders it on every settled ticket. Before the fix
+  the only source of that sentence was a client component's state, so a reload
+  could never have shown it — which is the same as saying the customer's record
+  of what they were paid did not exist anywhere they could return to.
+
+Fixed in the product rather than in the test: the ticket now renders that
+confirmation from **the server's own view of the bet**, so it survives the
+refresh, a reload, a second device and a week later. The wording is identical to
+the panel's, because a customer should not have to notice that two parts of the
+page are telling them the same thing. The transient message stays for the
+partial case, where the panel is still the only thing that can say it.
+
+### Finding 57 — the diagnostic written to explain failures was the failure
+
+`FAILED` → fixed. A test defect, not a product one, and the reason the customer
+journey could not pass at all.
+
+The cash-out step reads the page's warning note so that a failure says *which*
+of three causes it was — a refused cash-out, an intercepted click or a network
+fault look identical otherwise. It did that with:
+
+```
+await page.locator(".sb-note--warn").first().textContent().catch(() => null)
+```
+
+**On a successful cash-out there is no warning note.** `textContent()` auto-waits
+for its element; this project sets no `actionTimeout`, so the default of 0 means
+"wait as long as the test has". Every SUCCESSFUL run therefore stopped here
+until the 180-second budget expired. The `.catch()` then swallowed the timeout
+long after it could matter, and the confirmation assertion — still pending, never
+evaluated — was reported as `Received: undefined`.
+
+So the failure message named the confirmation, and the confirmation was fine.
+Three things made it hard to read, and all three are worth remembering:
+
+- **It could never have passed.** This was not a flake to be re-run. The
+  successful path was the blocking path.
+- **`--timeout` from the command line did nothing**, because `test.setTimeout(180_000)`
+  inside the test overrides it. That made "it is just slow" look disproved when
+  it had not been tested.
+- **The error context is captured at teardown, not at the assertion.** Its
+  snapshot showed the confirmation present, which is true — by then. Trusting it
+  as the state at failure time sent the first hour of the investigation at a
+  locator that was never wrong.
+
+Fixed by counting before reading: `count()` resolves against the DOM as it is
+now, which is the question actually being asked, and the read that follows is
+bounded. The journey went from a 180-second timeout to **15.3 seconds, passing**.
+It is the only unbounded `textContent()` in the suite — checked, not assumed.
+
 ---
 
 ## 16. Responsible gambling, KYC and compliance
@@ -2153,13 +2303,18 @@ check, which is how a privilege problem survives a review.
 | Open-redirect guard on sign-in | `VERIFIED_BY_INTEGRATION_TEST` — §9 |
 | Secret scanning in CI | `VERIFIED_BY_INTEGRATION_TEST` — 15 rules |
 | `IDENTITY_PEPPER` rotation | **NOT DONE.** Possible only while every account is a test account; permanently impossible afterwards |
-| **`INTERNAL_SECURITY_VERIFICATION`** | **Done 2026-09-05**, `e2e/security.spec.ts` — see below |
+| **`INTERNAL_SECURITY_VERIFICATION`** | **Done 2026-09-05**, `e2e/security.spec.ts` and `e2e/security-extended.spec.ts` — see below |
 | Dependency vulnerability audit | **Done.** `npm audit --omit=dev`: **0 vulnerabilities**. Full tree: 4 moderate, all dev-only — see below |
 | Rotation of credentials pasted into a chat during setup | **NOT DONE** — Neon, Upstash, Backblaze, Inngest, odds-api.io |
 | Managed secret storage | `NOT_IMPLEMENTED` — `.env` is gitignored, and that is all |
+| Prompt-injection corpus for the AI surfaces | **Complete.** 53 attacks and 59 tests; `prompt-injection.acceptance.spec.ts` runs the corpus against the real guardrail layer. A row here said `NOT_IMPLEMENTED` for a pass after it was finished, which is the contradiction `ci:docs` rule 12 now refuses |
 | Independent penetration testing | `NOT_IMPLEMENTED` — external work, and the internal pass below does **not** discharge it |
 
 ### `INTERNAL_SECURITY_VERIFICATION`, 2026-09-05
+
+Twenty-six probes across two files. The first twelve are below; the fourteen
+added in the second pass, covering every attack class the brief named, are in
+"The rest of the matrix" further down.
 
 **What it is not.** Not a penetration test. Nobody creative sat down with this
 system and tried to break it; a list of known attack shapes was fired at it
@@ -2192,6 +2347,46 @@ the password-reset endpoint answered **500 for an address with an account and
 comment says it must answer identically. Reading the route would not have shown
 it, because the difference came from an error thrown two modules away.
 
+### The rest of the matrix, added in the second pass
+
+`e2e/security-extended.spec.ts`. Every one is a refusal being asserted; nothing
+here asserts that a vulnerability was exploited, and nothing runs anywhere but
+loopback.
+
+| Attack class | What was fired, and what came back |
+|---|---|
+| CSRF on state-changing routes | The session cookie's own flags read from the browser (httpOnly, SameSite ≠ None); a credentials callback posted from a foreign Origin with no CSRF token, which returned no session material; a withdrawal posted with `Origin: https://evil.example.com`. **The last one was accepted with 201 — finding 51** |
+| Session fixation | The session cookie read before authenticating, after authenticating, and after a second sign-in from a cleared context. A fresh token every time; no pre-authentication value survives the privilege change |
+| Admin step-up bypass | A valid payout approval posted by a SUPER_ADMIN with a live session and no step-up: **401 `REAUTH_REQUIRED`**. The proof is held server-side and is never read from the request, so nothing in the body could satisfy it |
+| Stored XSS | `<img src=x onerror=…>` written to the profile through its real route, then four pages that render it loaded: no script ran |
+| Reflected XSS | The same payload in three echoed query strings: no script ran, and no element was created from it — React renders it as text |
+| File-upload MIME spoofing | An HTML payload named `passport.png` with a `text/html` content type: refused by the allow-list, not by the filename |
+| File size limit | An 11MB image against a 10MB cap: refused server-side, not by the form |
+| Malicious filenames and path traversal | Five names containing `../`, backslash traversal, percent-encoded traversal and SQL: **accepted and then ignored**, which is the stronger property — every one produced a server-generated key of the form `kyc/<user-uuid>/<kind>-<32 hex>.<ext>`, with the supplied name nowhere in it |
+| SSRF-shaped input | Five internal targets (link-local metadata, loopback Postgres and Redis, `file://`, `gopher://`) through a query string and a profile field: all answered promptly and below 500. Nothing in this product takes a URL from a customer and fetches it, and this confirms that rather than assuming it |
+| Mass assignment | `kycLevel`, `role` and `status` posted to the profile route; `userId` and `driftPolicy` to placement; `effectiveFrom` to the limits route. None caused a server error, the account did not become an administrator, and a client-supplied `driftPolicy` did **not** place a bet at a price the account never agreed to — the policy is read from stored preferences on the server |
+| Rate-limit bypass with spoofed headers | 90 requests, each with a different forged `x-forwarded-for` and `x-real-ip`: no server errors. **Recorded honestly**: the budget IS per-forwarded-address, so rotating the header does reset it behind a proxy that does not overwrite it. That is why the deployment sits behind one that does |
+| Webhook replay | The identical `charge.success` body twice with a wrong signature: both answered the same status, so the response does not reveal whether the reference had been seen. Replay of a genuinely SIGNED webhook needs the provider secret and stays `BLOCKED_BY_KEY` |
+| Withdrawal idempotency conflict | One key reused with a different amount: the second was refused |
+| Cash-out idempotency conflict | The same bet cashed out twice under two DIFFERENT client keys: refused, or replayed the same payment. The money key is derived from the BET, so a client varying its own key cannot buy one back twice |
+| Cross-user cash-out access | Another customer's quote and take: both refused |
+| Cross-user KYC access | The KYC routes and the admin queue as an ordinary customer: refused, and no other user's id returned |
+| Cross-user session access | One customer revoking another's session by id: refused, and the victim's session still worked afterwards |
+| Unsafe error-detail leakage | Refusals checked for wallet ids, user ids and the book's remaining appetite on a market: none present |
+| Production startup with QA routes | All five real `/api/qa/*` paths probed as a signed-in customer, with **both** GET and POST, then again with a wrong key: **404 every time**. Answering 404 rather than 403 means a customer cannot tell the surface is there. **Finding 52 came out of this**: Next answered 405 for an unimplemented verb, which distinguished a real path from an absent one |
+| Production startup with local delivery/storage adapters | `review-adapters.acceptance.spec.ts` and `qa-surface.acceptance.spec.ts` falsify **each of the four conditions on its own** — the environment name, the second switch, eleven hosting-platform markers, and nine live provider credentials. Testing them together would pass for the wrong reason the moment one broke |
+| Production startup with sandbox providers | `ephemeral-guard.acceptance.spec.ts`, at construction, which is where the decision is made |
+| Responsible-gambling bypass | A cool-off and a self-exclusion taken for real on isolated accounts, then wagering attempted — including from a session cookie held from BEFORE the exclusion. Refused, and the customer is told which limit stopped them |
+| Missing-DOB betting and withdrawal bypass | An account with no date of birth: bet refused, withdrawal refused, the board shows the banner, and a date ten years ago is refused when supplied |
+| AI confirmation bypass | Five instructions claiming blanket permission, including one impersonating a system message. None claimed an action was performed and the balance did not move. The guardrail sits ABOVE the tool table, so a tool added later cannot forget it. **No language model is connected**: this exercises the keyword router and the guardrails and is not evidence about a model's behaviour |
+| Admin AI permission boundary | Four administrative requests to the assistant while signed in as a SUPER_ADMIN: no other customer's address returned, no administrative action claimed. **Scaffolding.** There is no Admin AI product and this does not imply one |
+
+**What this still is not.** Nobody creative sat down with this system and tried
+to break it. A list of known shapes was fired at it and the answers were
+recorded, which catches regressions in controls the team already knows about and
+finds nothing nobody thought of. **An independent penetration test remains
+outstanding external work** and none of the above discharges it.
+
 ### Dependency audit
 
 | Scope | Result |
@@ -2202,8 +2397,6 @@ it, because the difference came from an error thrown two modules away.
 | Package | Severity | Path | Exploitability here | Why it is not fixed |
 |---|---|---|---|---|
 | `esbuild` ≤ 0.24.2 | moderate | `drizzle-kit` → `@esbuild-kit/esm-loader` → `@esbuild-kit/core-utils` → `esbuild` | **None in this project.** The advisory is that esbuild's **development server** lets any website send it requests and read the response. This repository never runs that server; `drizzle-kit` is a dev dependency used by `db:generate` to emit SQL | The only offered fix is `drizzle-kit@0.18.1` — a **downgrade** and a breaking change, against a config written for 0.31. No fixed version exists in the 0.x line. Recorded rather than forced, per the instruction not to apply unsafe upgrades |
-| Prompt-injection corpus for the AI surfaces | `NOT_IMPLEMENTED` — guardrail tests exist; a dedicated corpus does not |
-
 ---
 
 ## 21. Performance
@@ -2241,7 +2434,49 @@ model latency, which does not exist yet.
 
 ## 22. Known contamination and pending destructive operations
 
-Both need owner approval. **Neither has been run.**
+The two items below need owner approval. **Neither has been run.** A third
+entry records a connection to production that this pass made by accident and is
+disclosed rather than omitted.
+
+### Finding 58 — a readiness check read the production database, and nothing said so
+
+**Disclosed, not discovered later.** During the final gate sweep,
+`npm run readiness:demo` and `npm run readiness:real-money` were run from a
+shell that had exported `DATABASE_URL`, `DIRECT_DATABASE_URL` and `REDIS_URL`
+but **not** `MIGRATION_DATABASE_URL`. `scripts/production-check.ts` resolves that
+name first for its migration count, and `dotenv` fills anything the shell has
+not set from `.env` — which holds the production connection string.
+
+| | |
+|---|---|
+| What was executed | **One read-only statement**, `SELECT count(*) FROM drizzle.__drizzle_migrations` |
+| What was written | **Nothing.** No INSERT, UPDATE, DELETE, DDL or migration. The code path has no write in it |
+| What it returned | a count of 27, which was then displayed beside numbers measured locally |
+| Customer data | **Not read.** The statement touches the migration journal only |
+| How it was caught | the readiness output said "27 applied but 29 exist on disk" while `check-migrations` had just reported **29 of 29** against a clean local database. Two numbers that could not both be about the same database |
+
+**Why it is written down rather than quietly fixed.** The instruction for this
+pass was explicit that no test may connect to production Neon. This did, once,
+read-only, and the honest record of that is worth more than a clean-looking
+document. It also demolishes a comfortable assumption: every *other* safeguard
+in this repository worked — the review server blanks credentials, the money
+gate refuses a non-loopback host, the reset script refuses any database but the
+disposable one — and this still happened, because `production-check.ts` is the
+one script whose **job** is to look at production and therefore has no loopback
+guard to trip.
+
+**What changed.** The check now names the database it counted: `29 of 29 applied
+on this machine`, or `… on remote host <name>` when it is not local. A hostname
+is not a credential and nothing else from the URL is ever printed. The script
+was deliberately **not** given a loopback refusal — checking a remote deployment
+is what it is for — so the fix is disclosure, which is the control that was
+actually missing. Re-run with the local URL supplied, it reports **29 of 29 on
+this machine**, demo **NOT READY on 1 blocking item**, real-money **NOT READY on
+13**, both exit 1.
+
+**A reading whose subject is ambiguous is not evidence about anything**, and for
+the hour before this was noticed, one line of the gate table was evidence about
+the wrong machine.
 
 ### 400 synthetic fixtures in the production database
 
@@ -2531,11 +2766,12 @@ never been run. It runs and passes.
 `package.json` nor the lockfile, so CI's `npm ci` would not have had it. Finding
 36.
 
-**Gates.** tsc 0 · eslint 0/0 · secret-scan clean over 450 files ·
-`git diff --check` clean · vitest **76 files, 989 passed, 1 skipped, 0 failed,
-run twice with identical results** · playwright **139 passed, 13 skipped, 0
-failed** · migrations 29 of 29 on a clean database · admin smoke 18 of 18 · role
-audit clean. `readiness:demo` and `readiness:real-money` remain red on owner,
+**Gates, as that pass measured them at the time** — kept as the record of what
+was true then, not as a current figure; §4 carries the current ones. tsc 0 ·
+eslint 0/0 · secret-scan clean over 450 files · `git diff --check` clean ·
+vitest **76 files, 989 passed, 1 skipped, 0 failed, run twice with identical
+results** · the browser suite at the time stood at **139 passed, 13 skipped, 0 failed** · migrations 29 of
+29 on a clean database · admin smoke 18 of 18 · role audit clean. `readiness:demo` and `readiness:real-money` remain red on owner,
 key, contract and regulatory items, which is the correct result.
 
 **Layout.** On short pages the footer stopped mid-screen and left a band of pale

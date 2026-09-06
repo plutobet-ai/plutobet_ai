@@ -11,7 +11,7 @@ import {
 } from "@/modules/betting/__tests__/helpers";
 import { deleteSettlementOutboxAsOwnerForTest } from "@/modules/wallet/__tests__/helpers";
 import { WalletService } from "@/modules/wallet/wallet.service";
-import { replayScheduledFunction, runScheduledFunction } from "./scheduler-harness";
+import { replayScheduledFunction, runScheduledFunction } from "@/modules/qa/inngest-harness";
 import type { EventResult, OddsProvider, OddsSnapshot, SportEvent } from "@/modules/odds/provider";
 
 /**

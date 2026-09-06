@@ -965,4 +965,51 @@ test.describe("the betslip", () => {
       route: "— (client guard; the authoritative refusal is server-side)",
     });
   });
+
+  test("the Betslip and My Bets tabs each show their own pane", async ({ page }) => {
+    /*
+     * PRESSED, not read. The previous pass recorded this as
+     * `IMPLEMENTED_NOT_LIVE_TESTED` with the note "the panes render; the tab
+     * itself is not pressed" — which is a fair description of a control nobody
+     * had tried, on the panel every customer uses.
+     */
+    await signIn(page);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const tile = await firstUsableOdds(page);
+    await tile!.click();
+    await openSlip(page);
+
+    const slip = visibleSlip(page);
+    const betslipTab = slip.getByRole("tab", { name: /^Betslip/ });
+    const myBetsTab = slip.getByRole("tab", { name: /^My Bets$/ });
+
+    // The betslip pane is the one that opens, and the tab says how many picks.
+    await expect(betslipTab).toHaveAttribute("aria-selected", "true");
+    await expect(betslipTab, "the tab does not count the selections").toContainText("(1)");
+    await expect(slip.getByLabel("Stake in naira")).toBeVisible();
+
+    await myBetsTab.click();
+    await expect(myBetsTab).toHaveAttribute("aria-selected", "true");
+    await expect(betslipTab).toHaveAttribute("aria-selected", "false");
+    // A different pane, with a route out of it — not the same one relabelled.
+    await expect(slip.getByRole("link", { name: "Open My Bets" })).toBeVisible();
+    await expect(slip.getByLabel("Stake in naira")).toHaveCount(0);
+
+    // And back, with the selection still there.
+    await betslipTab.click();
+    await expect(betslipTab).toHaveAttribute("aria-selected", "true");
+    await expect(slip.getByLabel("Stake in naira")).toBeVisible();
+    await expect(betslipTab).toContainText("(1)");
+
+    record(test.info().project.name, {
+      page: "/",
+      viewport: viewportName(page),
+      control: "Betslip / My Bets tabs",
+      action: "pressed My Bets, then Betslip again, with one selection on the slip",
+      observed:
+        "each tab selects itself and deselects the other; My Bets replaces the stake field with a " +
+        "route to the full list; returning to Betslip still has the selection and its count",
+      route: "client state",
+    });
+  });
 });

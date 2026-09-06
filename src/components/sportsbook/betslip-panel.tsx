@@ -29,6 +29,32 @@ import { slipMath, toKobo } from "./slip-math";
 
 const QUICK_STAKES = [100, 500, 1000, 5000];
 
+interface CustomerFailure {
+  code: string;
+  message: string;
+}
+
+/**
+ * The per-combination refusals the API returns in `details`.
+ *
+ * Validated rather than cast. These are curated customer-facing pairs from
+ * `customerReason` — never a raw domain message, which carries wallet ids and
+ * how much more the book will take on a market — but a response body is still
+ * a response body, and rendering an unchecked string from one into the page is
+ * the habit worth not having.
+ */
+function customerFailures(body: unknown): CustomerFailure[] {
+  if (!body || typeof body !== "object" || !("details" in body)) return [];
+  const details = (body as { details: unknown }).details;
+  if (!Array.isArray(details)) return [];
+  return details.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Record<string, unknown>;
+    if (typeof row.code !== "string" || typeof row.message !== "string") return [];
+    return [{ code: row.code, message: row.message }];
+  });
+}
+
 export function BetslipPanel({
   signedIn,
   balanceMinor,
@@ -108,11 +134,52 @@ export function BetslipPanel({
       const body: unknown = await response.json().catch(() => null);
 
       if (!response.ok) {
-        const message =
+        /*
+         * THE REASON, NOT THE SUMMARY.
+         *
+         * The service works out exactly why each combination was refused —
+         * a suspended selection, an empty wallet, a full market, a price that
+         * moved, a safer-gambling limit the customer set themselves — and the
+         * route passes those curated messages back in `details`. Both files
+         * carry a comment saying so. Nothing read them: this panel took
+         * `body.message`, which is the AGGREGATE, and every refusal on a
+         * single-selection slip showed "none of the combinations on this slip
+         * could be placed".
+         *
+         * That is the same defect as the safer-gambling one fixed in the
+         * service: a limit that stops somebody silently has done half its job.
+         * The fix reached the API and stopped one layer short of the customer.
+         */
+        const failures = customerFailures(body);
+        const reasons = [...new Set(failures.map((f) => f.message))];
+        const summary =
           body && typeof body === "object" && "message" in body
             ? String((body as { message: unknown }).message)
             : "That bet could not be placed. Nothing has been charged.";
-        slip.setStatus("error", message);
+
+        /*
+         * A MOVED PRICE IS A QUESTION, AND THIS IS WHERE IT GETS ASKED.
+         *
+         * The account preference defaults to "Ask", which the server implements
+         * as "refuse anything that drifted". Until now nothing asked: the
+         * customer saw a refusal, pressed Place bet again with the same stale
+         * number, and was refused again. Adopting the live price puts the new
+         * number on the slip — with its recalculated return — so the next press
+         * is a decision rather than a repetition. The server still prices it and
+         * still decides.
+         */
+        if (failures.some((f) => f.code === "ODDS_CHANGED") && slip.adoptDrift() > 0) {
+          slip.setStatus(
+            "error",
+            `${reasons[0] ?? summary} The new price is on your slip — check the return and place again.`,
+          );
+          return;
+        }
+
+        slip.setStatus(
+          "error",
+          reasons.length === 1 ? reasons[0]! : reasons.length > 1 ? `${summary}: ${reasons.join(" ")}` : summary,
+        );
         return;
       }
 
@@ -215,9 +282,20 @@ export function BetslipPanel({
                           {now > pick.odds
                             ? <TrendingUp size={14} aria-hidden="true" />
                             : <TrendingDown size={14} aria-hidden="true" />}
+                          {/*
+                            * SAYS WHAT ACTUALLY HAPPENS.
+                            *
+                            * This read "Your bet will be placed at the current
+                            * price", which is untrue under the DEFAULT account
+                            * setting: "Ask" makes the server refuse a drifted
+                            * price outright. A customer was promised a
+                            * placement and given a refusal, which is the worst
+                            * order to put those two in.
+                            */}
                           <span>
-                            Odds moved to <strong>{now.toFixed(2)}</strong>. Your bet will be placed at the
-                            current price.
+                            Odds moved to <strong>{now.toFixed(2)}</strong>. Your{" "}
+                            <Link href="/account/preferences">odds-change setting</Link> decides
+                            whether that is accepted for you or offered back to confirm.
                           </span>
                         </div>
                       ) : null}

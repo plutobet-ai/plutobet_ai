@@ -95,6 +95,12 @@ export const GET = authedRoute(
         available: true,
         fairValueMinor: money(quote.fairValueMinor),
         offerMinor: money(quote.offerMinor),
+        /*
+         * What the offer is FOR: the stake still running, which is less than
+         * the original on a bet that has already been partially bought back.
+         * A client needs it to price a partial correctly — see `quoteFor`.
+         */
+        liveStakeMinor: money(quote.liveStakeMinor),
       });
     } catch (error) {
       /*

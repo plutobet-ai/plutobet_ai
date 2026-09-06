@@ -1,4 +1,4 @@
-import { expect, type Page, type ConsoleMessage, type Request } from "@playwright/test";
+import { expect, type Locator, type Page, type ConsoleMessage, type Request } from "@playwright/test";
 
 /**
  * Shared helpers for the browser suite.
@@ -122,6 +122,46 @@ export async function expectNoHorizontalOverflow(page: Page, where: string): Pro
       `${overflow.clientWidth}px viewport; widest element ${overflow.widest.selector} ` +
       `reaches ${overflow.widest.right}px`,
   ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+}
+
+/**
+ * Fills a REACT-CONTROLLED field and waits for the component to have noticed.
+ *
+ * THE RACE THIS CLOSES. `page.goto(..., "domcontentloaded")` returns before
+ * React has hydrated. A `fill()` in that window puts the text in the DOM, and
+ * nothing else happens: no `onChange` runs, the component's state stays empty,
+ * and a button gated on that state stays disabled. The page then LOOKS exactly
+ * right in a screenshot — the field holds "96665336301" and the button is grey —
+ * which is why the failure reads as a product defect and is not one.
+ *
+ * It bit the KYC identity form intermittently and would bite any of the others
+ * on a slower machine. Waiting for a fixed time would trade one flake for
+ * another; waiting for the CONSEQUENCE — the control the field is supposed to
+ * enable — is the thing actually being waited for.
+ *
+ * Retries the fill rather than only re-checking, because a fill that landed
+ * before hydration is lost and no amount of waiting recovers it.
+ */
+export async function fillControlled(
+  field: Locator,
+  value: string,
+  enables: Locator,
+  attempts = 15,
+): Promise<void> {
+  await expect(field).toBeVisible();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await field.fill(value);
+    try {
+      await expect(enables).toBeEnabled({ timeout: 1000 });
+      return;
+    } catch {
+      // Hydration has not caught up. Fill again.
+    }
+  }
+  throw new Error(
+    `filled "${value}" ${attempts} times and the control it should enable never became enabled — ` +
+      "either the page never hydrated or the field does not gate that control",
+  );
 }
 
 /** Signs in through the real credentials form, not by forging a cookie. */

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { sql } from "drizzle-orm";
-import { Ticket } from "lucide-react";
+import { CheckCircle2, Ticket } from "lucide-react";
 import { db } from "@/db/pooled";
 import { authOptions } from "@/modules/auth/auth-options";
 import { naira } from "@/lib/money";
@@ -19,6 +19,8 @@ type BetRow = {
   total_odds_decimal: string;
   potential_return_minor: string;
   cashout_value_minor: string | null;
+  /** How much of the original stake has already been bought back. */
+  cashed_out_stake_minor: string;
   placed_at: Date;
   settled_at: Date | null;
   legs: { fixture: string; selection: string; odds: string; result: string }[];
@@ -52,6 +54,7 @@ export default async function BetsPage() {
       b.total_odds_decimal::text        AS total_odds_decimal,
       b.potential_return_minor::text    AS potential_return_minor,
       b.cashout_value_minor::text       AS cashout_value_minor,
+      b.cashed_out_stake_minor::text    AS cashed_out_stake_minor,
       b.placed_at,
       b.settled_at,
       COALESCE(
@@ -102,6 +105,28 @@ export default async function BetsPage() {
         <section className="sb-panel">
           {rows.map((bet) => {
             const settled = bet.status !== "PENDING";
+
+            /*
+             * WHAT IS STILL RUNNING AFTER A PARTIAL CASH-OUT.
+             *
+             * This page showed the ORIGINAL stake and the ORIGINAL potential
+             * return on a ticket that had already had half of it bought back —
+             * so a customer who took ₦200 of a ₦400 bet was still told "Stake
+             * ₦400, To return ₦800", when at most ₦400 could come back. The
+             * column was not even selected. Nothing lied about money that had
+             * moved; it lied about money that might.
+             *
+             * Pro-rata, in integer kobo, matching how the cash-out service
+             * prices a portion: return x remaining / original.
+             */
+            const stakeMinor = BigInt(bet.stake_minor);
+            const cashedOutStakeMinor = BigInt(bet.cashed_out_stake_minor ?? "0");
+            const runningStakeMinor = stakeMinor - cashedOutStakeMinor;
+            const runningReturnMinor =
+              stakeMinor > 0n
+                ? (BigInt(bet.potential_return_minor) * runningStakeMinor) / stakeMinor
+                : 0n;
+            const partiallyCashedOut = !settled && cashedOutStakeMinor > 0n;
             const paid =
               bet.status === "CASHED_OUT" && bet.cashout_value_minor
                 ? bet.cashout_value_minor
@@ -154,8 +179,15 @@ export default async function BetsPage() {
 
                 <dl className="sb-ticket__foot">
                   <div>
-                    <dt className="sb-xs sb-muted">Stake</dt>
-                    <dd style={{ margin: 0, fontWeight: 700 }}>{naira(bet.stake_minor)}</dd>
+                    <dt className="sb-xs sb-muted">{partiallyCashedOut ? "Still running" : "Stake"}</dt>
+                    <dd style={{ margin: 0, fontWeight: 700 }}>
+                      {naira(settled ? stakeMinor : runningStakeMinor)}
+                    </dd>
+                    {partiallyCashedOut ? (
+                      <dd className="sb-xs sb-muted" style={{ margin: 0 }}>
+                        {naira(cashedOutStakeMinor)} of {naira(stakeMinor)} cashed out
+                      </dd>
+                    ) : null}
                   </div>
                   <div>
                     <dt className="sb-xs sb-muted">Total odds</dt>
@@ -173,7 +205,7 @@ export default async function BetsPage() {
                         color: paid && BigInt(paid) > 0n ? "var(--sb-up)" : undefined,
                       }}
                     >
-                      {settled ? (paid ? naira(paid) : "—") : naira(bet.potential_return_minor)}
+                      {settled ? (paid ? naira(paid) : "—") : naira(runningReturnMinor)}
                     </dd>
                   </div>
                 </dl>
@@ -181,12 +213,38 @@ export default async function BetsPage() {
                 <p className="sb-ticket__ref">Reference {bet.id.slice(0, 8)}</p>
 
                 {/*
-                  Only a running bet can be bought back. A settled, voided or
-                  already cashed-out ticket shows nothing here rather than a
-                  disabled control, because there is no action to explain.
+                  Only a running bet can be bought back. A settled or voided
+                  ticket shows no control here rather than a disabled one,
+                  because there is no action to explain.
                 */}
                 {bet.status === "PENDING" ? (
                   <CashOut betId={bet.id} stakeMinor={bet.stake_minor} />
+                ) : null}
+
+                {/*
+                  THE CONFIRMATION HAS TO OUTLIVE THE REFRESH THAT CAUSES IT.
+
+                  `CashOut` said "Cashed out for X" from its own state and then
+                  called `router.refresh()`. The refresh re-rendered this list,
+                  the ticket came back as CASHED_OUT, and the condition above
+                  unmounted the component MID-SENTENCE — so the only plain
+                  statement of what the customer had just been paid existed for
+                  as long as one server round-trip and then vanished. A
+                  `role="status"` node destroyed before a screen reader reaches
+                  it has announced nothing at all, and a sighted customer was
+                  left with a pill and a "Returned" column to infer from.
+
+                  Rendering it from the SERVER's own view of the bet is what
+                  makes it durable: it is still there after a reload, on a
+                  second device, and a week later. The wording is identical to
+                  the one the panel used, because the customer should not have
+                  to notice that two different parts of the page said it.
+                */}
+                {bet.status === "CASHED_OUT" && bet.cashout_value_minor ? (
+                  <p className="sb-note sb-note--ok" role="status">
+                    <CheckCircle2 size={15} aria-hidden="true" />
+                    Cashed out for <strong>{naira(bet.cashout_value_minor)}</strong>.
+                  </p>
                 ) : null}
               </article>
             );

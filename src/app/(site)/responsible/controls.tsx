@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { signOut } from "next-auth/react";
 import { naira } from "@/lib/money";
 
 /**
@@ -105,17 +106,28 @@ export function ResponsibleControls(props: {
     }
     const result = await post({ action: "SELF_EXCLUDE", ...(months ? { months } : {}) });
     /*
-     * A FULL document navigation, deliberately.
+     * NextAuth's OWN signOut, which POSTs. Not a navigation to the route.
      *
-     * `/api/auth/signout` is a route handler, not a page: it clears the session
-     * cookie and issues its own redirect. `useRouter().push()` — which the lint
-     * rule below suggests — performs a client-side transition that never gives
-     * the browser a response to act on, so the cookie would survive and the
-     * user would stay signed in after asking to be excluded. That is the one
-     * outcome this button must never produce.
+     * This used to be `window.location.assign("/api/auth/signout")`, with a
+     * comment asserting that the route "clears the session cookie and issues
+     * its own redirect". It does not. A GET to that path renders NextAuth's
+     * default, unbranded "Are you sure you want to sign out?" confirmation page
+     * and clears nothing — only the POST behind that page's button does. So the
+     * customer who had just excluded themselves was left holding a live session
+     * on a page asking whether they had meant it, and `/signin` bounced them
+     * back to the board because the session still resolved. Found by a browser
+     * test, which is the only place this was ever going to show up: every unit
+     * test of the exclusion passes, because the exclusion itself worked.
+     *
+     * The account is refused at every protected route regardless — the session
+     * guard checks status, and the browser suite asserts a surviving cookie
+     * cannot place a bet — so this was never a way to keep betting. It was the
+     * product hesitating at the one moment it must not.
+     *
+     * `signOut` sends the CSRF token with a POST, which is what actually
+     * expires the cookie, and then follows `callbackUrl`.
      */
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    if (result) window.location.assign("/api/auth/signout");
+    if (result) await signOut({ callbackUrl: "/" });
   }
 
   if (excluded) {

@@ -200,6 +200,55 @@ export function publicRoute(
  * logged-in route would throttle real users to protect against an attacker
  * who can simply register again.
  */
+/**
+ * Refuses a state-changing request that DECLARES a different origin.
+ *
+ * WHAT THIS IS AND IS NOT. The session cookie is SameSite, so a genuine
+ * cross-site form post from another site never carries it and never gets this
+ * far — that is the control doing the work, and it is asserted in
+ * `security-extended.spec.ts` by reading the flags the browser was actually
+ * issued. This is the second layer, and it exists because SameSite=Lax has
+ * gaps a determined attacker can work in: a same-SITE subdomain is not
+ * cross-site, and any future relaxation of the cookie would silently remove the
+ * only defence there was.
+ *
+ * The browser security pass found the gap. A withdrawal posted with
+ * `Origin: https://evil.example.com` was accepted with 201 — no cross-site
+ * request could have produced that call, so it was not an exploitable finding,
+ * but "the only thing stopping this is a cookie attribute" is a poor place for
+ * a money route to be.
+ *
+ * ABSENT IS ALLOWED, DELIBERATELY. Browsers send `Origin` on every
+ * state-changing fetch; native and server-to-server clients often send none.
+ * Refusing an absent header would break those without stopping any attack,
+ * because an attacker in a browser cannot omit it.
+ *
+ * GET and HEAD are not checked. They must not change state, and a route that
+ * does is a different defect than this one.
+ */
+export function assertSameOrigin(request: NextRequest): void {
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
+
+  const declared = request.headers.get("origin");
+  if (!declared) return;
+
+  let origin: URL;
+  try {
+    origin = new URL(declared);
+  } catch {
+    throw new ApiError(403, "CROSS_ORIGIN", "that request could not be verified");
+  }
+
+  // The host the request actually arrived at, preferring the forwarded host a
+  // proxy sets — comparing against a configured URL instead would fail on
+  // every preview deployment.
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host && origin.host !== host) {
+    throw new ApiError(403, "CROSS_ORIGIN", "that request could not be verified");
+  }
+}
+
 export function authedRoute(
   bucket: string,
   rule: RateLimitRule,
@@ -207,6 +256,7 @@ export function authedRoute(
 ) {
   return async (request: NextRequest): Promise<NextResponse> => {
     try {
+      assertSameOrigin(request);
       const session = await requireActiveSession();
       const userId = session.user.id;
       const ip = clientIp(request);
@@ -237,6 +287,7 @@ export function adminRoute(
 ) {
   return async (request: NextRequest): Promise<NextResponse> => {
     try {
+      assertSameOrigin(request);
       // Establishes only that the caller is an administrator. WHAT they may do
       // is a separate question — each route calls `requirePermission` for the
       // specific authority it needs. Being in the admin area is not authority.

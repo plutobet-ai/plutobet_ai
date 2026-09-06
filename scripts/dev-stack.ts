@@ -37,6 +37,64 @@ function url(user: string, password: string): string {
   return `postgresql://${user}:${password}@127.0.0.1:${PORT}/${DATABASE}`;
 }
 
+/**
+ * Creates the database in UTF8, whatever the cluster's own encoding is.
+ *
+ * WHY THIS IS NOT THE DEFAULT AND WHY IT MATTERS. `embedded-postgres` runs
+ * `initdb` with the machine's locale, and on a Windows host that is
+ * `English_United States.1252` — so `template1`, and every database cloned
+ * from it, is WIN1252. Production is UTF8.
+ *
+ * The consequence is not theoretical. A payout approval whose written reason
+ * contained a naira sign — the currency this product is denominated in, printed
+ * on every screen — failed with
+ *
+ *   character with byte sequence 0xe2 0x82 0xa6 in encoding "UTF8"
+ *   has no equivalent in encoding "WIN1252"
+ *
+ * and the administrator saw a 500 on a sensitive action that works perfectly in
+ * production. Found by a browser test, because nothing else had ever written a
+ * naira sign, an accented customer name or an emoji into a column.
+ *
+ * A local stack that fails where production succeeds is bad; the same stack
+ * SUCCEEDING where production would fail would be worse, and either way the
+ * disposable database has to have production's encoding or it is not a rehearsal.
+ *
+ * `template0` with `LC_COLLATE`/`LC_CTYPE` of `C` is the only combination that
+ * can be created regardless of what the cluster was initialised with.
+ */
+async function createUtf8Database(): Promise<void> {
+  const admin = postgres(`postgresql://${OWNER}:${OWNER_PASSWORD}@127.0.0.1:${PORT}/postgres`, {
+    max: 1,
+    prepare: false,
+  });
+  try {
+    const [existing] = await admin<{ datname: string }[]>`
+      SELECT datname FROM pg_database WHERE datname = ${DATABASE}
+    `;
+    if (!existing) {
+      await admin.unsafe(
+        `CREATE DATABASE "${DATABASE}" ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'`,
+      );
+      console.log(`created database ${DATABASE} with UTF8 encoding`);
+    }
+
+    const [row] = await admin<{ encoding: string }[]>`
+      SELECT pg_encoding_to_char(encoding) AS encoding
+      FROM pg_database WHERE datname = ${DATABASE}
+    `;
+    if (row && row.encoding !== "UTF8") {
+      throw new Error(
+        `the local database is ${row.encoding}, not UTF8. Production is UTF8, so this stack ` +
+          `would fail on text production accepts — including the naira sign. Delete .pgdata-dev ` +
+          `and start again.`,
+      );
+    }
+  } finally {
+    await admin.end({ timeout: 5 });
+  }
+}
+
 async function main(): Promise<void> {
   const pg = new EmbeddedPostgres({
     databaseDir: DATA_DIR,
@@ -54,11 +112,7 @@ async function main(): Promise<void> {
     await pg.initialise();
   }
   await pg.start();
-  try {
-    await pg.createDatabase(DATABASE);
-  } catch {
-    // Already there from a previous run.
-  }
+  await createUtf8Database();
 
   const ownerUrl = url(OWNER, OWNER_PASSWORD);
   const appUrl = url(APP_USER, APP_PASSWORD);

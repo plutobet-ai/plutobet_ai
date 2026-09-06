@@ -20,7 +20,17 @@
  *   2. The host of every one is CHECKED. A URL that is not loopback aborts the
  *      start. This is the check that makes the rest of it safe rather than
  *      merely careful.
- *   3. `AUTH_SECRET` and `IDENTITY_PEPPER` are REVIEW-ONLY values, generated on
+ *   3. THE REVIEW ADAPTERS ARE TURNED ON, and the key that reaches them is
+ *      generated here. `PLUTOBET_ENVIRONMENT=review` plus
+ *      `PLUTOBET_REVIEW_ADAPTERS=1` let a local mailbox stand in for Termii and
+ *      Resend, and let KYC uploads land in a directory this machine throws
+ *      away — which is what makes registration, password reset, phone and email
+ *      verification and document upload testable in a browser at all against a
+ *      production build. `PLUTOBET_REVIEW_KEY` is what stops a CUSTOMER on this
+ *      same server reaching that surface: the routes answer 404 without it. See
+ *      `src/lib/review-mode.ts` for the four conditions and why the last of them
+ *      cannot be forged.
+ *   4. `AUTH_SECRET` and `IDENTITY_PEPPER` are REVIEW-ONLY values, generated on
  *      first run into a gitignored file. Previously the review process
  *      inherited the production pair from `.env`, which meant a local browser
  *      session was signed with the production secret and local identity numbers
@@ -168,12 +178,21 @@ function reviewSecrets() {
       const match = /^([A-Z_]+)=(.*)$/.exec(line.trim());
       if (match) found[match[1]] = match[2];
     }
-    if (found.AUTH_SECRET && found.IDENTITY_PEPPER) return found;
+    if (found.AUTH_SECRET && found.IDENTITY_PEPPER && found.PLUTOBET_REVIEW_KEY) return found;
   }
 
   const made = {
     AUTH_SECRET: randomBytes(32).toString("base64"),
     IDENTITY_PEPPER: randomBytes(32).toString("hex"),
+    /*
+     * The key the Playwright suite presents to /api/qa/*.
+     *
+     * Regenerated whenever this file is deleted, and never the same on two
+     * machines. It is what separates "a browser test may make a match finish"
+     * from "a signed-in customer may make a match finish" on a server where
+     * both arrive at the same origin.
+     */
+    PLUTOBET_REVIEW_KEY: randomBytes(32).toString("hex"),
   };
   writeFileSync(
     SECRETS_FILE,
@@ -183,6 +202,7 @@ function reviewSecrets() {
       "# file to roll it; the only thing that breaks is local sessions.",
       `AUTH_SECRET=${made.AUTH_SECRET}`,
       `IDENTITY_PEPPER=${made.IDENTITY_PEPPER}`,
+      `PLUTOBET_REVIEW_KEY=${made.PLUTOBET_REVIEW_KEY}`,
       "",
     ].join("\n"),
     { encoding: "utf8", mode: 0o600 },
@@ -222,6 +242,7 @@ const CREDENTIAL_SHAPED = /(_API_KEY|_SECRET|_TOKEN|_PASSWORD|_SIGNING_KEY|_EVEN
 const ALLOWED = new Set([
   "AUTH_SECRET",
   "IDENTITY_PEPPER",
+  "PLUTOBET_REVIEW_KEY",
   "NEXTAUTH_SECRET",
   "NEXTAUTH_URL",
   "AUTH_URL",
@@ -280,6 +301,13 @@ const child = spawn(
       // Named so the running app can say what it is. A review server that
       // cannot be told apart from production is its own hazard.
       PLUTOBET_ENVIRONMENT: "review",
+      /*
+       * The second, separate switch. Naming an environment is the sort of thing
+       * that gets copied between configurations; deciding that this process may
+       * substitute fake delivery and storage adapters is not, so it is its own
+       * variable rather than a consequence of the name above.
+       */
+      PLUTOBET_REVIEW_ADAPTERS: "1",
     },
   },
 );

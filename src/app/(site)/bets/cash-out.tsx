@@ -28,6 +28,8 @@ import { naira } from "@/lib/money";
 interface Quote {
   available: boolean;
   offerMinor?: string;
+  /** The stake the offer is FOR — less than the original after a partial. */
+  liveStakeMinor?: string;
   reason?: string;
   message?: string;
 }
@@ -82,6 +84,31 @@ export function CashOut({ betId, stakeMinor }: { betId: string; stakeMinor: stri
     }
   }
 
+  /*
+   * WHAT A PARTIAL IS ACTUALLY WORTH.
+   *
+   * The server prices a portion pro-rata against the stake still running:
+   * `offer x portion / liveStake`. This mirrors that arithmetic exactly, and
+   * it is the fix for a control that had never once worked. Before it, the
+   * component sent the WHOLE-BET offer as `expectedOfferMinor` while asking to
+   * buy back half — so the server priced the half at half, found it below the
+   * figure the customer had "accepted", and refused every partial cash-out
+   * with a message blaming a price move that had not happened.
+   *
+   * HALF OF WHAT IS RUNNING, not half of the original. That is what the label
+   * says, and it is also the only version the server will take: a portion
+   * larger than the live stake is refused outright, which is what asking for
+   * half the original stake would do on a bet that had already had half bought
+   * back. `liveStakeMinor` falls back to the original only for a quote from
+   * before this field existed.
+   */
+  const liveStakeMinor = BigInt(quote?.liveStakeMinor ?? stakeMinor);
+  const portionMinor = liveStakeMinor / 2n;
+  const fullOfferMinor = BigInt(quote?.offerMinor ?? "0");
+  const partialOfferMinor =
+    liveStakeMinor > 0n ? (fullOfferMinor * portionMinor) / liveStakeMinor : 0n;
+  const acceptingMinor = partial ? partialOfferMinor : fullOfferMinor;
+
   async function take() {
     if (!quote?.offerMinor) return;
     setStage("taking");
@@ -92,10 +119,11 @@ export function CashOut({ betId, stakeMinor }: { betId: string; stakeMinor: stri
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           // The figure on screen, as a guard. The server pays this or more,
-          // never less.
-          expectedOfferMinor: quote.offerMinor,
-          // Half the ORIGINAL stake, and only when the customer chose it.
-          ...(partial ? { stakePortionMinor: (BigInt(stakeMinor) / 2n).toString() } : {}),
+          // never less — so it has to be the figure for the amount actually
+          // being bought back, not for the whole ticket.
+          expectedOfferMinor: acceptingMinor.toString(),
+          // Half of what is still running, and only when the customer chose it.
+          ...(partial ? { stakePortionMinor: portionMinor.toString() } : {}),
         }),
       });
       const body = (await response.json().catch(() => null)) as
@@ -153,7 +181,8 @@ export function CashOut({ betId, stakeMinor }: { betId: string; stakeMinor: stri
             <span>
               Take half and leave the rest running
               <span className="sb-xs sb-muted" style={{ display: "block" }}>
-                You keep {naira(BigInt(stakeMinor) / 2n)} of the stake on this bet.
+                You are paid {naira(partialOfferMinor)} now and keep{" "}
+                {naira(liveStakeMinor - portionMinor)} of the stake running.
               </span>
             </span>
           </label>
@@ -163,7 +192,13 @@ export function CashOut({ betId, stakeMinor }: { betId: string; stakeMinor: stri
               Not now
             </button>
             <button type="button" className="sb-btn sb-btn--primary" onClick={take}>
-              Accept {naira(quote.offerMinor)}
+              {/*
+                * The amount being accepted, which is not the whole-bet offer
+                * once "take half" is ticked. The button used to promise the
+                * full figure and then pay half, which is the wrong direction
+                * for a number a customer is agreeing to.
+                */}
+              Accept {naira(acceptingMinor)}
             </button>
           </div>
 

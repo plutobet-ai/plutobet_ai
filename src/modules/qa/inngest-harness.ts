@@ -3,6 +3,14 @@ import type { InngestFunction } from "inngest";
 /**
  * Runs registered Inngest functions in-process, faithfully enough to test them.
  *
+ * IT LIVES OUTSIDE `__tests__` BECAUSE TWO CALLERS NEED IT. The settlement
+ * acceptance specs drive it from Vitest, and `/api/qa/settlement` drives it
+ * from a REVIEW SERVER so a browser journey can watch a bet it placed through
+ * the visible betslip reach WON, LOST or VOID through the registered functions
+ * rather than through a direct call to `settleBet`. Nothing here is reachable
+ * on a deployment: the route that imports it answers 404 unless the four
+ * review-environment conditions and a per-run key are all satisfied.
+ *
  * WHY THIS EXISTS AND WHAT IT IS NOT
  * The settlement chain was only ever proven by calling its services directly,
  * which skips the registered function entirely — the part that had never

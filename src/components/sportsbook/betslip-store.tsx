@@ -62,6 +62,16 @@ interface BetslipValue {
   has: (selectionId: string) => boolean;
   /** Live price moved since it was added, for the odds-changed warning. */
   noteLivePrice: (selectionId: string, price: number) => void;
+  /**
+   * Takes the moved prices as the ones to bet at, and returns how many changed.
+   *
+   * This is what makes the default "Ask" odds-change preference actually ask.
+   * The server refuses a drifted price under that preference — correctly, since
+   * the customer never agreed to the new number — but until now nothing put the
+   * new number in front of them, so a moved price produced a refusal they could
+   * only repeat. Adopting on request is the customer's answer to the question.
+   */
+  adoptDrift: () => number;
   drift: Record<string, number>;
   setStatus: (status: SlipStatus, message?: string | null, betId?: string | null) => void;
   open: boolean;
@@ -195,6 +205,24 @@ export function BetslipProvider({ children }: { children: ReactNode }) {
     setPlacedBetId(null);
   }, [updateSlip]);
 
+  const adoptDrift = useCallback((): number => {
+    let adopted = 0;
+    updateSlip((current) => ({
+      ...current,
+      picks: current.picks.map((pick) => {
+        const now = drift[pick.selectionId];
+        if (typeof now !== "number" || now === pick.odds) return pick;
+        adopted += 1;
+        return { ...pick, odds: now };
+      }),
+    }));
+    // The warning is about a difference from what was accepted. Once the new
+    // price IS what was accepted, leaving the entry would keep warning about a
+    // move the customer has already agreed to.
+    setDrift({});
+    return adopted;
+  }, [drift, updateSlip]);
+
   const noteLivePrice = useCallback((selectionId: string, price: number) => {
     setDrift((current) => {
       if (current[selectionId] === price) return current;
@@ -214,10 +242,10 @@ export function BetslipProvider({ children }: { children: ReactNode }) {
   const value = useMemo<BetslipValue>(
     () => ({
       picks, status, message, placedBetId, stake, drift, open,
-      add, remove, toggle, clear, setStake, has, noteLivePrice, setStatus, setOpen,
+      add, remove, toggle, clear, setStake, has, noteLivePrice, adoptDrift, setStatus, setOpen,
     }),
     [picks, status, message, placedBetId, stake, drift, open,
-      add, remove, toggle, clear, setStake, has, noteLivePrice, setStatus],
+      add, remove, toggle, clear, setStake, has, noteLivePrice, adoptDrift, setStatus],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

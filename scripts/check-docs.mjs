@@ -24,6 +24,7 @@
  * to compare it against, because a checker that only says "inconsistent" makes
  * somebody re-derive the search that found it.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -420,6 +421,379 @@ function checkPlaceholders() {
   }
 }
 
+// ------------------------------------------------------- 8. the branch it is about
+
+/** git, or null when git cannot answer — CI tarballs and shallow checkouts. */
+function git(...args) {
+  try {
+    return execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The branch the document says it describes must be the branch that is checked
+ * out.
+ *
+ * THE FAILURE THIS CATCHES, EXACTLY. The header read "Branch described:
+ * `main`" for an entire pass whose work lived on a feature branch. Every
+ * number under it was measured on the feature branch, so a reader following the
+ * header would have gone to `main` and found none of it. Nothing in the
+ * document contradicted itself; it contradicted the repository, which is the
+ * one thing a status file is not allowed to do.
+ */
+function checkBranchDescribed() {
+  const actual = git("rev-parse", "--abbrev-ref", "HEAD");
+  if (!actual || actual === "HEAD") return; // detached or no git: nothing to compare
+
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      // The header writes it as "**Branch described:** `name`", so the bold
+      // markers sit between the colon and the value.
+      const stated = /Branch described:\**\s*`([^`]+)`/i.exec(text);
+      if (!stated) return;
+      if (stated[1] !== actual) {
+        report(
+          rel,
+          i + 1,
+          "branch-described",
+          `says it describes "${stated[1]}"; the checked-out branch is "${actual}"`,
+        );
+      }
+    });
+  }
+}
+
+/**
+ * A stated count of commits on this branch must match git.
+ *
+ * Counted from `main`, which is where the branch was cut, so the number is
+ * deterministic and needs no network. A document that says "four commits" after
+ * a fifth has landed is the same class of staleness as a wrong migration total,
+ * and it is the one a reader uses to decide what still has to be published.
+ */
+function checkBranchCommitCount() {
+  const actual = git("rev-list", "--count", "main..HEAD");
+  if (actual === null || actual === "") return;
+  const count = Number(actual);
+  if (!Number.isFinite(count)) return;
+
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      if (!/commits? on this branch/i.test(text)) return;
+      const stated = /(\d+)\s+commits? on this branch|Commits on this branch\s*\|\s*\*{0,2}(\d+)/i.exec(text);
+      if (!stated) return;
+      const value = Number(stated[1] ?? stated[2]);
+      if (Number.isFinite(value) && value !== count) {
+        report(
+          rel,
+          i + 1,
+          "branch-commit-count",
+          `states ${value} commits on this branch; git rev-list main..HEAD counts ${count}`,
+        );
+      }
+    });
+  }
+}
+
+// ----------------------------------------------------- 9. browser-suite totals
+
+/**
+ * Every stated browser-suite total must match the run that produced the report,
+ * and the statements must match each other.
+ *
+ * THE FAILURE THIS CATCHES. Sections 3, 4, 5 and 26 all quoted "139 passed"
+ * long after the suite had grown past 270, and one sentence still described it
+ * "growing from 118 to 152". Each was true on the day it was written and none
+ * was true together. A reader cannot tell which of four numbers is current, and
+ * the honest answer — read it from the run — is what this does.
+ */
+function browserRunTotals() {
+  const file = path.join(ROOT, "artifacts", "playwright-report.json");
+  if (!existsSync(file)) return null;
+  try {
+    const stats = JSON.parse(readFileSync(file, "utf8")).stats ?? {};
+    const passed = Number(stats.expected ?? 0);
+    const skipped = Number(stats.skipped ?? 0);
+    const failed = Number(stats.unexpected ?? 0);
+    if (passed + skipped + failed === 0) return null;
+    /*
+     * A FAILED OR INTERRUPTED RUN IS NOT A SOURCE OF TOTALS.
+     *
+     * The report is rewritten by every invocation, including one that was
+     * cancelled halfway. Comparing the document against those numbers would
+     * report a document that is right and a run that never finished, which
+     * teaches people to ignore the checker. When the last run did not pass
+     * cleanly, this rule falls back to internal consistency.
+     */
+    if (failed > 0) return null;
+    return { passed, skipped, failed, total: passed + skipped + failed };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phrases that pin a figure to a moment other than now.
+ *
+ * Shared by the browser-total and interaction-total rules, because a changelog
+ * entry and a waypoint paragraph are the same situation: a number that was true
+ * when it was written, kept on purpose, and labelled.
+ */
+const HISTORICAL_MARKER =
+  /\bat that point\b|\bwaypoint\b|\bat the time\b|\bin that pass\b|\bas it stood\b|\bthen stood at\b|\bthat pass measured\b|\bpreviously\b|\bused to\b|\bwas then\b/i;
+
+function checkBrowserTotals() {
+  const run = browserRunTotals();
+  const stated = [];
+
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      /*
+       * The figure that follows the word "playwright", not the first figure on
+       * the line. One row reads "vitest 989 passed … playwright 273 passed",
+       * and taking the first match reported the UNIT total as a browser total —
+       * a false positive, which is the failure mode that gets a checker
+       * switched off.
+       */
+      const afterPlaywright = /playwright[^|]*?(\d{2,4})\s+passed/i.exec(text);
+      /*
+       * "139 Playwright tests" puts the number BEFORE the word, so the pattern
+       * above cannot see it. That exact phrasing was live in two places while
+       * the suite stood at 273 — a stale claim the first version of this rule
+       * walked straight past, which is why it is matched explicitly.
+       */
+      const beforePlaywright = /(\d{2,4})\s+(?:Playwright|browser) tests?\b/i.exec(text);
+      /*
+       * THE GATE TABLE PUTS THE COMMAND AND THE RESULT IN DIFFERENT CELLS.
+       *
+       *   | Browser | `npx playwright test` | **273 passed, 13 skipped** |
+       *
+       * Both patterns above stop at a `|`, so neither could see that row — and
+       * that row is the single most-read statement of the browser total in the
+       * document. It sat at 139 through an entire pass while the checker
+       * reported the file clean. A rule that misses the headline figure is
+       * worse than no rule, because it certifies it.
+       *
+       * Matched on the ROW: a table line naming playwright or leading with a
+       * Browser label, excluding the unit row, which names vitest in its own
+       * command cell.
+       */
+      const tableRow =
+        /^\s*\|/.test(text) &&
+        !/vitest|unit/i.test(text) &&
+        (/playwright/i.test(text) || /^\s*\|\s*Browser\s*\|/i.test(text))
+          ? /(\d{2,4})\s+passed/i.exec(text)
+          : null;
+      const m =
+        afterPlaywright ??
+        beforePlaywright ??
+        tableRow ??
+        (/browser (?:suite|tests?)/i.test(text) && !/vitest|unit/i.test(text)
+          ? /(\d{2,4})\s+passed/i.exec(text)
+          : null);
+      if (!m) return;
+      /*
+       * A FIGURE THAT DATES ITSELF IS NOT A STALE FIGURE.
+       *
+       * §26 is a changelog: each entry records what a PAST pass measured, and
+       * those numbers are supposed to differ from today's. Rewriting them to
+       * match the current run would destroy the only record of how the suite
+       * grew, and deleting them would be worse. So a line may keep a historical
+       * total on ONE condition — that it says so on the same line.
+       *
+       * The exemption is deliberately narrow, and it is the same device rule 12
+       * uses. It fires only on an explicit backward-looking marker, so a
+       * present-tense claim ("the browser suite passes 139 tests") is still
+       * caught. Writing "at that point" above a number you believe to be
+       * current is not a way around the checker; it is a false statement about
+       * your own document, and it is one a reader can see.
+       */
+      if (HISTORICAL_MARKER.test(text)) return;
+      stated.push({ rel, line: i + 1, count: Number(m[1]) });
+    });
+  }
+
+  if (run) {
+    for (const s of stated) {
+      if (s.count !== run.passed) {
+        report(
+          s.rel,
+          s.line,
+          "browser-totals",
+          `states ${s.count} browser tests passed; artifacts/playwright-report.json records ${run.passed}`,
+        );
+      }
+    }
+    return;
+  }
+
+  // No report to compare against: enforce that the document agrees with itself.
+  const distinct = [...new Set(stated.map((s) => s.count))];
+  if (distinct.length > 1) {
+    for (const s of stated) {
+      report(
+        s.rel,
+        s.line,
+        "browser-totals",
+        `browser pass count ${s.count} disagrees with other statements (${distinct.join(", ")})`,
+      );
+    }
+  }
+}
+
+// -------------------------------------------- 10. audited-interaction totals
+
+/**
+ * A stated number of audited interactions must match the generated audit.
+ *
+ * The audit is a table generated FROM the run, so its row count is the only
+ * honest source for this number. Sections 3 and 5 both said "38 audited
+ * interactions" against a file that by then held several hundred.
+ */
+function checkInteractionTotals() {
+  const file = path.join(ROOT, "artifacts", "ui-review", "INTERACTION_AUDIT.md");
+  if (!existsSync(file)) return;
+  const rows = readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith("|") && l.split("|").length >= 8)
+    /*
+     * The header row and its separator are not interactions.
+     *
+     * The first cell is `Project`, not `Page` — the audit is merged from two
+     * browser projects and names which one each row came from. Matching only
+     * `Page` counted the HEADER as an interaction, so this rule demanded a
+     * number one higher than the file actually holds and the document could
+     * never satisfy it. An off-by-one in a checker is worse than none: it makes
+     * a correct document look wrong, and the fix somebody reaches for is to
+     * write the wrong number down.
+     */
+    .filter((l) => !/^\|\s*(Project|Page|-+|:?-+:?)\s*\|/i.test(l)).length;
+  if (rows === 0) return;
+
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      const m = /(\d{1,4})\s+audited interactions?/i.exec(text);
+      if (!m) return;
+      if (HISTORICAL_MARKER.test(text)) return;
+      const stated = Number(m[1]);
+      if (stated !== rows) {
+        report(
+          rel,
+          i + 1,
+          "interaction-total",
+          `states ${stated} audited interactions; artifacts/ui-review/INTERACTION_AUDIT.md has ${rows} rows`,
+        );
+      }
+    });
+  }
+}
+
+// ------------------------------------------------- 11. a sentence said twice
+
+/**
+ * The same sentence twice in a row.
+ *
+ * "QA ledger credit is not a deposit" appeared on two consecutive lines,
+ * which is what happens when a paragraph is rewritten beside its own earlier
+ * version. It reads as an error to anyone who notices and is invisible to
+ * anyone who does not, and no proof-read reliably catches it in 2,500 lines.
+ *
+ * Short lines are ignored — table separators, headings and boilerplate repeat
+ * legitimately — and so is anything inside a fenced code block, where a
+ * repeated line is usually the point.
+ */
+function checkRepeatedSentences() {
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+
+    let fenced = false;
+    const recent = [];
+    lines.forEach((raw, i) => {
+      if (/^\s*```/.test(raw)) fenced = !fenced;
+      if (fenced) return;
+
+      const text = raw.trim().replace(/\s+/g, " ");
+      if (text.length < 40) return;
+      if (/^[|>#-]/.test(text)) return;
+
+      const earlier = recent.find((r) => r.text === text);
+      if (earlier) {
+        report(
+          rel,
+          i + 1,
+          "repeated-sentence",
+          `repeats line ${earlier.line} word for word — "${text.slice(0, 60)}…"`,
+        );
+      }
+      recent.push({ text, line: i + 1 });
+      // A short window: a sentence legitimately recurs in a document this long,
+      // and only an immediate repetition is a copy-paste error.
+      if (recent.length > 4) recent.shift();
+    });
+  }
+}
+
+// --------------------------------------- 12. finished work called unfinished
+
+/**
+ * Nothing that is finished may be described as unfinished ANYWHERE.
+ *
+ * Rule 3 already stops a finished item sitting in the active backlog. This is
+ * the same rule without the section boundary, because the failure it catches
+ * happened outside one: §20's security table went on carrying
+ * "Prompt-injection corpus | NOT_IMPLEMENTED" while §0 recorded the 53-attack
+ * corpus and its 59 tests. The backlog was clean and the document was still
+ * wrong.
+ */
+const FINISHED_SUBJECTS = [
+  { in: /cash-?out exposure defect/i, evidence: "§15 records cash-out repaired, reachable and tested" },
+  { in: /date-of-birth backfill/i, evidence: "§0 stage 5d records the flow, banner and gates" },
+  { in: /bank list for withdrawals/i, evidence: "§0 stage 5f records the route, picker and its tests" },
+  { in: /redis caching of .?liveVersion/i, evidence: "§0 stage 5e records the cache and its tests" },
+  { in: /load tests? for the homepage/i, evidence: "§0 stage 6 records the measured load run" },
+  { in: /prompt-?injection corpus/i, evidence: "§0 stage 5i records 53 attacks and 59 tests" },
+  { in: /retire the legacy bridge/i, evidence: "the file is deleted from the repository" },
+  { in: /legacy[- ]style removal/i, evidence: "the legacy bridge stylesheet is deleted" },
+];
+
+const UNFINISHED_WORDS =
+  /NOT_IMPLEMENTED|\bnot implemented\b|\boutstanding\b|\bstill to do\b|\bnot (?:yet )?(?:built|written|done|started)\b|\bremains? (?:to be|un)done\b/i;
+
+function checkFinishedNotCalledUnfinished() {
+  for (const rel of currentStateDocs()) {
+    const lines = readLines(rel);
+    if (!lines) continue;
+    lines.forEach((text, i) => {
+      if (!UNFINISHED_WORDS.test(text)) return;
+      for (const subject of FINISHED_SUBJECTS) {
+        if (!subject.in.test(text)) continue;
+        /*
+         * A line may legitimately say a thing USED to be unfinished, as long as
+         * it says so. The trail from a defect to its fix is worth reading.
+         */
+        if (/\bwas\b|\bused to\b|\bno longer\b|\buntil\b|\bpreviously\b|\bnow\b/i.test(text)) continue;
+        report(
+          rel,
+          i + 1,
+          "finished-called-unfinished",
+          `describes finished work as unfinished — ${subject.evidence}`,
+        );
+      }
+    });
+  }
+}
+
 // ------------------------------------------------------------------- run them
 
 checkMigrationTotals();
@@ -429,12 +803,18 @@ checkDeletedFilesNotDescribedAsPresent();
 checkSingleSourceOfTruth();
 checkStatusLabels();
 checkPlaceholders();
+checkBranchDescribed();
+checkBranchCommitCount();
+checkBrowserTotals();
+checkInteractionTotals();
+checkRepeatedSentences();
+checkFinishedNotCalledUnfinished();
 
 const byRule = new Map();
 for (const f of findings) byRule.set(f.rule, (byRule.get(f.rule) ?? 0) + 1);
 
 if (findings.length === 0) {
-  console.info(`check-docs: clean — ${docFiles().length} document(s), 7 rules`);
+  console.info(`check-docs: clean — ${docFiles().length} document(s), 13 rules`);
   process.exit(0);
 }
 

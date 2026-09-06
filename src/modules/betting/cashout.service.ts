@@ -105,7 +105,10 @@ export class CashOutService {
    * The remaining stake is priced, not the original, so a partially cashed-out
    * bet quotes what is still at risk.
    */
-  async quoteFor(betId: string, userId: string): Promise<CashOutQuote> {
+  async quoteFor(
+    betId: string,
+    userId: string,
+  ): Promise<CashOutQuote & { liveStakeMinor: bigint }> {
     return this.wallet.withMoneyTransaction(async ({ tx }) => {
       const bet = await this.loadBet(tx, betId, false);
 
@@ -126,12 +129,29 @@ export class CashOutService {
       `);
       const liveStake = bet.stakeMinor - BigInt(state?.cashed_out ?? "0");
 
-      return quoteCashOut(
-        liveStake,
-        bet.legs,
-        this.config.marginBasisPoints,
-        this.config.minimumOfferMinor,
-      );
+      /*
+       * THE LIVE STAKE TRAVELS WITH THE QUOTE.
+       *
+       * The offer prices the stake that is STILL RUNNING, not the original — a
+       * bet that has already had half bought back is worth half as much.
+       * Without that figure a client cannot work out what a PARTIAL cash-out is
+       * worth, and the one that tried guessed from the original stake instead.
+       * It sent the WHOLE-BET offer as `expectedOfferMinor` while asking to buy
+       * back half; the server priced the half at half, saw less than the figure
+       * the customer had supposedly accepted, and refused. Every partial
+       * cash-out failed with "the price moved and this portion is now worth
+       * less than the offer you accepted" — a message about something that had
+       * not happened, on a control that could therefore never once have worked.
+       */
+      return {
+        ...quoteCashOut(
+          liveStake,
+          bet.legs,
+          this.config.marginBasisPoints,
+          this.config.minimumOfferMinor,
+        ),
+        liveStakeMinor: liveStake,
+      };
     });
   }
 
