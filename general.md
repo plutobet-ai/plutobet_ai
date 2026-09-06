@@ -14,10 +14,14 @@ those commits were already published.
 **Pushed:** to **`plutobet-ai/plutobet_ai` only**, at the owner's instruction.
 **`origin` was not pushed, and its `main` has not moved.** Verify both with the
 `git ls-remote` commands in §0 rather than trusting a hash written here.
-**Deployed:** **no.** `plutobet-ai/plutobet_ai` has **never created a
-deployment** — checked against its deployments API immediately before the push,
-which returned none, against `origin`'s thirty. `origin` deploys on every push
-and was deliberately left alone. **Railway: not deployed.**
+**Deployed:** **not by this pass.** `plutobet-ai/plutobet_ai` has **never
+created a deployment** — checked against its deployments API immediately before
+the push, which returned none, against `origin`'s thirty. `origin` deploys on
+every push and was deliberately left alone.
+**The platform this project deploys to is RAILWAY**, stated by the owner on
+2026-09-06. **The thirty Vercel deployments on `origin` are therefore an
+unintended integration, not this project's hosting** — see §0. **Railway's own
+state cannot be seen from this repository** and is not asserted here.
 Commit count, branch and remote state are recorded in §0, read from git, and
 checked by `npm run ci:docs` — never repeated from this header.
 
@@ -134,12 +138,34 @@ browser during this pass — not that it looks right in the source.
 >
 > If anything in this document disagrees with git, **git is right.**
 
-### A production deployment happened, and it was not asked for
+### A production deployment happened on a platform this project does not use
+
+**THE OWNER DEPLOYS THIS PROJECT ON RAILWAY.** Stated 2026-09-06. Everything
+below about Vercel therefore describes **an integration nobody intended**, and
+that makes it more urgent rather than less — a Vercel project has been building
+and publishing this betting platform **thirty times** without being part of the
+deployment story anybody was maintaining.
 
 **Pushing `main` triggered a Vercel PRODUCTION deployment of
 `Madubuezejoshua/plutobet`, and it succeeded.** This is recorded prominently
 because the task that authorised the push explicitly did not authorise a
-deployment.
+deployment — and because it turns out not to have been the intended platform at
+all.
+
+**What is actually verifiable from here**, and what is not:
+
+| Claim | Evidence |
+|---|---|
+| `Madubuezejoshua/plutobet` has **30** deployments, environment `Production`, creator `vercel[bot]`, the most recent for `299d4b9` | Read from `GET /repos/Madubuezejoshua/plutobet/deployments`. Not inferred |
+| The repository contains **no** `vercel.json` and **no** `.vercel` directory | Searched |
+| The repository **does** carry Railway tooling — `scripts/push-env-railway.ts`, and `scripts/deploy-build.mjs` detects `RAILWAY_ENVIRONMENT_NAME` to enable migrations | Read from the files |
+| `plutobet-ai/plutobet_ai` has **0** deployments | Read from the same API |
+| **Whether Railway is currently running, and against which database** | **Cannot be seen from this repository.** No Railway credential is present and none was used. Not asserted |
+
+So the Vercel project was connected to that GitHub repository at some point and
+has been deploying ever since, independently of the platform the owner is
+actually using. `deploy-build.mjs` supports both targets, which is why nothing
+in the build ever complained.
 
 | | |
 |---|---|
@@ -147,14 +173,22 @@ deployment.
 | Deployments created | One **Production** deployment by `vercel[bot]` **per push to `main`**, plus a Preview on the first. Every one so far reports `state=success` |
 | How many so far | Every `main` push in this pass deployed. Do not read a count from this document — it goes stale on the next push. Read it from Vercel, or from `GET /repos/Madubuezejoshua/plutobet/deployments` |
 | The other remote | `plutobet-ai/plutobet_ai` created **no** deployment — it has no such integration |
-| Railway | **Not deployed.** The prohibition named Railway specifically and Railway was never touched |
+| Railway | **Not touched by this pass**, and its live state is **not visible from here** — no Railway credential is present and none was used. The owner states Railway is the platform this project deploys on, which makes the Vercel deployments above an unintended integration rather than this product's hosting |
 
-**What this means, stated plainly.** The redesigned sportsbook is now live on
-that Vercel project, running against whatever environment variables the Vercel
-project holds. This document cannot say what those are — they live in an owner
-dashboard, not in the repository — so **whether production is now serving
-against the production database is an owner question, and it is the first thing
-to check.**
+**What this means, stated plainly.** The redesigned sportsbook is live on a
+**Vercel** project that is not the platform this product is meant to run on,
+against whatever environment variables that Vercel project holds. This document
+cannot say what those are — they live in an owner dashboard, not in the
+repository. Two questions follow, and the first is not the one this section
+originally asked:
+
+1. **Does that Vercel project exist on purpose?** If the answer is no — and the
+   owner using Railway suggests it is — then the fix is to disconnect it, not to
+   tune it. An unintended public deployment of a gambling product is a problem
+   whatever database it points at.
+2. **Which database does it point at?** Still worth knowing before it is
+   removed, because if it has been serving against the production database then
+   it has been reachable by strangers.
 
 **What it does not mean.** No provider was activated, no credential was rotated
 or created, and nothing in this repository points at production: the review
@@ -1267,9 +1301,9 @@ Blockers inherited from the previous pass are in §23.
 |---|---|
 | Deleting the 400 synthetic production fixtures | Needs owner approval on a dry-run fingerprint |
 | Applying the ₦630 exposure repair | Same |
-| Any Railway deployment | Not authorised by this task |
+| Any Railway deployment | Not authorised by this task. Railway is the owner's actual platform, and nothing here deployed to it or read its state |
 | Any live provider activation | Not authorised, and no credentials exist |
-| Any Railway deployment | Not authorised, and Railway was never contacted. **Note that a Vercel deployment did occur — see §0** |
+| Reading Railway's live state | **No Railway credential is present**, so nothing in this document describes what Railway is currently running. **Note that a Vercel deployment did occur on a platform this project does not use — see §0** |
 | Any force push, reset or history rewrite | Not needed. Both pushes were fast-forwards onto remotes that had not moved |
 | Edit bet, personalisation, Admin AI | The rules that define them do not exist, and are not a developer's to invent. Questions listed in `OWNER_LAUNCH_CHECKLIST.md` |
 | A screen-reader pass | **Not done.** axe is a static rule engine over the accessibility tree, and a clean run means no rule fired — not that the product is usable with NVDA, JAWS or VoiceOver. Keyboard navigation and the automated rule set are covered; an actual assistive-technology walkthrough is not, and no automated check substitutes for it |
@@ -2564,7 +2598,7 @@ one you have not are different acts.
 |---|---|
 | `NEXTAUTH_URL` | Points at localhost, so sign-in callbacks send real users to their own machine. The documented example domain returns "Application not found"; the correct value is not knowable from here |
 | Runtime database role | §20 |
-| Railway database and Redis | Neither is attached |
+| Railway database and Redis | Recorded as unattached by an earlier pass. **Not re-checked here** — Railway is not visible from this repository, and the owner should confirm rather than trust this row |
 | Restore drill | No Neon API key. Runbook and a tested verifier are in `docs/restore-runbook.md` |
 | `SENTRY_DSN` | Unset — no production error visibility |
 | First administrator | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, then `npm run db:seed-admin` |
@@ -2638,36 +2672,42 @@ of it is implemented, and none should be until it is approved.**
 
 ## 24. What the owner should do next, in order
 
-1. **Check what the Vercel production deployment is pointing at.** The redesign
-   is merged to `main` on both remotes, and pushing `main` deploys — so it is
-   live on that Vercel project, against whatever environment variables the
-   project holds. This repository cannot say what those are. **If Production
-   points at the production database, decide whether that is intended; if not,
-   promote the previous deployment back (one click, no git revert).** §0 carries
-   the read-only commands and the safe dashboard actions.
-2. **Decide whether `main` should auto-deploy at all**, and whether a branch
-   push should create a Preview. Both currently do.
-3. **Rotate `IDENTITY_PEPPER`** — possible only while every account is a test
+1. **Find out why a Vercel project is deploying this product at all.** You
+   deploy on **Railway**, so the thirty `vercel[bot]` Production deployments on
+   `Madubuezejoshua/plutobet` are an integration nobody is maintaining. The most
+   recent built `299d4b9`. **If it is not wanted, disconnect it** — Vercel
+   dashboard → the project → Settings → Git → Disconnect, or delete the project
+   outright. That stops any further push from publishing this product.
+2. **Before removing it, find out which database it has been pointing at.** If
+   that Vercel deployment has been serving against the production database, a
+   public URL has been reachable against real data for as long as it has
+   existed. Vercel dashboard → the project → Settings → Environment Variables.
+   §0 carries the read-only commands.
+3. **Confirm what Railway is actually running**, which this repository cannot
+   see. In particular whether it is deploying from `Madubuezejoshua/plutobet` or
+   from `plutobet-ai/plutobet_ai`, because `main` now differs between them: the
+   gap-closure work is on `plutobet` and `origin/main` is still `299d4b9`.
+4. **Rotate `IDENTITY_PEPPER`** — possible only while every account is a test
    account, permanently impossible after the first real customer.
-4. Rotate Neon, Upstash, Backblaze, Inngest, then odds-api.io.
-5. Give the deployment a database, Redis, and a real `NEXTAUTH_URL`.
-6. Create the least-privilege runtime database credential (§20). **This is the
+5. Rotate Neon, Upstash, Backblaze, Inngest, then odds-api.io.
+6. Give the deployment a database, Redis, and a real `NEXTAUTH_URL`.
+7. Create the least-privilege runtime database credential (§20). **This is the
    one open item the developer cannot close** — the code, the SQL and the
    readiness check all require it; only the credential is missing.
-7. Run `npm run production:check -- --remote=<url>` until it exits 0.
-8. Seed the first administrator.
-9. Approve the synthetic-fixture cleanup and the exposure repair (§22).
-10. Perform the restore drill and record the numbers.
-11. **Create a Resend account and buy Termii credits.** Until then **nobody can
+8. Run `npm run production:check -- --remote=<url>` until it exits 0.
+9. Seed the first administrator.
+10. Approve the synthetic-fixture cleanup and the exposure repair (§22).
+11. Perform the restore drill and record the numbers.
+12. **Create a Resend account and buy Termii credits.** Until then **nobody can
     register and nobody can reset a password** — and note that with no email
     provider the reset endpoint now answers a uniform 503 rather than leaking
     which addresses have accounts (finding 41).
-12. Obtain Paystack approval and live keys; prove one small real deposit and one
+13. Obtain Paystack approval and live keys; prove one small real deposit and one
     small real payout.
-13. Contract a KYC identity provider.
-14. Commission an **independent penetration test**. The internal verification in
+14. Contract a KYC identity provider.
+15. Commission an **independent penetration test**. The internal verification in
     §20 is automated and does not substitute for it.
-15. Resolve licensing before taking money from anybody.
+16. Resolve licensing before taking money from anybody.
 
 ---
 
